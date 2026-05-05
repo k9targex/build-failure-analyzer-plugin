@@ -97,5 +97,14 @@
         <f:entry title="${%Max size of log file}" description="${%maxLogSize}">
             <f:textbox field="maxLogSize" />
         </f:entry>
+        <f:entry title="${%Scan timeout per file (seconds)}" description="${%scanTimeoutFileSecondsDescription}">
+            <f:number field="scanTimeoutFileSeconds" default="120" min="0" />
+        </f:entry>
+        <f:entry title="${%Scan timeout per line (seconds)}" description="${%scanTimeoutLineSecondsDescription}">
+            <f:number field="scanTimeoutLineSeconds" default="10" min="0" />
+        </f:entry>
+        <f:entry title="${%Scan timeout per multi-line block (seconds)}" description="${%scanTimeoutBlockSecondsDescription}">
+            <f:number field="scanTimeoutBlockSeconds" default="30" min="0" />
+        </f:entry>
     </f:advanced>
 </j:jelly>

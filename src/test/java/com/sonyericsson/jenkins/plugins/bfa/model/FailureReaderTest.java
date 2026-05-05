@@ -37,7 +37,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.zip.ZipInputStream;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.sonyericsson.jenkins.plugins.bfa.model.indication.BuildLogIndication;
@@ -61,6 +63,29 @@ import static org.mockito.Mockito.mock;
  * @author Claes Elgemark &lt;claes.egemark@sonymobile.com&gt;
  */
 class FailureReaderTest {
+
+    private static final String SCAN_PROP_PREFIX = "com.sonyericsson.jenkins.plugins.bfa.scan.";
+
+    /**
+     * Pin scan timeouts to the historical (smaller) values for these tests.
+     * They run without a Jenkins instance, so {@link FailureReader} would otherwise
+     * fall back to the new (larger) defaults from {@code PluginImpl}, breaking the
+     * timing-based assertions below. System properties take precedence over the
+     * plugin config.
+     */
+    @BeforeEach
+    void pinScanTimeouts() {
+        System.setProperty(SCAN_PROP_PREFIX + "timeoutLineMs", "1000");
+        System.setProperty(SCAN_PROP_PREFIX + "timeoutFileMs", "10000");
+        System.setProperty(SCAN_PROP_PREFIX + "timeoutBlockMs", "2000");
+    }
+
+    @AfterEach
+    void unpinScanTimeouts() {
+        System.clearProperty(SCAN_PROP_PREFIX + "timeoutLineMs");
+        System.clearProperty(SCAN_PROP_PREFIX + "timeoutFileMs");
+        System.clearProperty(SCAN_PROP_PREFIX + "timeoutBlockMs");
+    }
 
     /**
      * Simple FailureReader used in the tests.

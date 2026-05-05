@@ -26,8 +26,10 @@ package com.sonyericsson.jenkins.plugins.bfa.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreType;
 import com.google.common.base.Joiner;
+import com.sonyericsson.jenkins.plugins.bfa.PluginImpl;
 import com.sonyericsson.jenkins.plugins.bfa.model.indication.FoundIndication;
 import com.sonyericsson.jenkins.plugins.bfa.model.indication.Indication;
+import hudson.ExtensionList;
 import hudson.Util;
 import hudson.console.ConsoleNote;
 import hudson.model.AbstractBuild;
@@ -57,10 +59,93 @@ public abstract class FailureReader {
 
     private static final Logger logger = Logger.getLogger(FailureReader.class.getName());
 
-    private static final long TIMEOUT_BLOCK = 2000;
-    private static final long TIMEOUT_FILE = 10000;
-    private static final long TIMEOUT_LINE = 1000;
+    /**
+     * Prefix for system properties that override the scan timeouts.
+     * System properties take precedence over the global plugin configuration,
+     * so an admin can hot-tune values via {@code -D...} JVM args without redeploy.
+     * Example JVM arg: {@code -Dcom.sonyericsson.jenkins.plugins.bfa.scan.timeoutFileMs=240000}.
+     */
+    private static final String SCAN_SYSPROP_PREFIX = "com.sonyericsson.jenkins.plugins.bfa.scan.";
+
+    private static final long MILLIS_PER_SECOND = 1000L;
+
     private static final long SLEEPTIME = 200;
+
+    /**
+     * Resolves a scan timeout in millis with priority: system property &gt; plugin config &gt; default.
+     *
+     * @param sysPropName the system property name (without prefix).
+     * @param configSeconds the value in seconds from the plugin config (already defaulted by getter).
+     * @return the resolved timeout in milliseconds.
+     */
+    private static long resolveTimeoutMs(String sysPropName, int configSeconds) {
+        Long sysProp = Long.getLong(SCAN_SYSPROP_PREFIX + sysPropName);
+        if (sysProp != null && sysProp > 0) {
+            return sysProp;
+        }
+        return Math.max(0, configSeconds) * MILLIS_PER_SECOND;
+    }
+
+    /**
+     * Returns the active {@link PluginImpl}, or {@code null} when Jenkins is not running
+     * (e.g. in plain unit tests). {@link PluginImpl#getInstance()} throws when the
+     * extension list is empty, so we go through {@link ExtensionList#lookup} directly.
+     *
+     * @return plugin instance or {@code null}.
+     */
+    private static PluginImpl tryPluginInstance() {
+        try {
+            ExtensionList<PluginImpl> list = ExtensionList.lookup(PluginImpl.class);
+            if (list == null || list.isEmpty()) {
+                return null;
+            }
+            return list.get(0);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /**
+     * @return timeout for matching a single line against a pattern (ms).
+     */
+    private static long timeoutLineMs() {
+        PluginImpl plugin = tryPluginInstance();
+        int seconds;
+        if (plugin == null) {
+            seconds = PluginImpl.DEFAULT_SCAN_TIMEOUT_LINE_SECONDS;
+        } else {
+            seconds = plugin.getScanTimeoutLineSeconds();
+        }
+        return resolveTimeoutMs("timeoutLineMs", seconds);
+    }
+
+    /**
+     * @return per-pattern timeout for scanning a whole file (ms).
+     */
+    private static long timeoutFileMs() {
+        PluginImpl plugin = tryPluginInstance();
+        int seconds;
+        if (plugin == null) {
+            seconds = PluginImpl.DEFAULT_SCAN_TIMEOUT_FILE_SECONDS;
+        } else {
+            seconds = plugin.getScanTimeoutFileSeconds();
+        }
+        return resolveTimeoutMs("timeoutFileMs", seconds);
+    }
+
+    /**
+     * @return timeout for scanning a single multi-line block (ms).
+     */
+    private static long timeoutBlockMs() {
+        PluginImpl plugin = tryPluginInstance();
+        int seconds;
+        if (plugin == null) {
+            seconds = PluginImpl.DEFAULT_SCAN_TIMEOUT_BLOCK_SECONDS;
+        } else {
+            seconds = plugin.getScanTimeoutBlockSeconds();
+        }
+        return resolveTimeoutMs("timeoutBlockMs", seconds);
+    }
 
     /**
      * Overlapping bytes when moving the sliding window searching area.
@@ -166,8 +251,8 @@ public abstract class FailureReader {
                                                               Run build,
                                                               BufferedReader reader,
                                                               String currentFile) throws IOException {
-        TimerThread timerThread = new TimerThread(Thread.currentThread(), TIMEOUT_LINE);
-        final long adjustedFileTimeout = TIMEOUT_FILE * getTotalNumberOfPatterns(causes);
+        TimerThread timerThread = new TimerThread(Thread.currentThread(), timeoutLineMs());
+        final long adjustedFileTimeout = timeoutFileMs() * getTotalNumberOfPatterns(causes);
 
         Map<FailureCause, List<FoundIndication>> resultMap = new HashMap<FailureCause, List<FoundIndication>>();
         Map<FailureCause, List<Indication>> firstOccurrences = new HashMap<FailureCause, List<Indication>>();
@@ -321,7 +406,7 @@ public abstract class FailureReader {
      */
     protected FoundIndication scanMultiLineOneFile(Run build, LineNumberReader reader, String currentFile)
             throws IOException {
-        TimerThread timerThread = new TimerThread(Thread.currentThread(), TIMEOUT_BLOCK);
+        TimerThread timerThread = new TimerThread(Thread.currentThread(), timeoutBlockMs());
         FoundIndication foundIndication = null;
         final Pattern pattern = indication.getPattern();
         timerThread.start();
@@ -353,7 +438,7 @@ public abstract class FailureReader {
                     }
                 }
                 timerThread.touch();
-                if (System.currentTimeMillis() - startTime > TIMEOUT_FILE) {
+                if (System.currentTimeMillis() - startTime > timeoutFileMs()) {
                     logger.warning("File timeout scanning for indication '" + indication.toString() + "' for file "
                             + currentFile);
                     break;

@@ -96,6 +96,22 @@ public class PluginImpl extends GlobalConfiguration {
      */
     public static final int DEFAULT_MAX_LOG_SIZE = 0;
 
+    /**
+     * Default per-pattern timeout for scanning a whole file (seconds).
+     * Raised from the upstream 10s so big console logs don't abort early.
+     */
+    public static final int DEFAULT_SCAN_TIMEOUT_FILE_SECONDS = 120;
+
+    /**
+     * Default timeout for matching a single line against a pattern (seconds).
+     */
+    public static final int DEFAULT_SCAN_TIMEOUT_LINE_SECONDS = 10;
+
+    /**
+     * Default timeout for scanning a single multi-line block (seconds).
+     */
+    public static final int DEFAULT_SCAN_TIMEOUT_BLOCK_SECONDS = 30;
+
     private static final int BYTES_IN_MEGABYTE = 1024 * 1024;
 
     /**
@@ -163,6 +179,9 @@ public class PluginImpl extends GlobalConfiguration {
 
     private int nrOfScanThreads;
     private int maxLogSize;
+    private int scanTimeoutFileSeconds;
+    private int scanTimeoutLineSeconds;
+    private int scanTimeoutBlockSeconds;
 
     private Boolean graphsEnabled;
 
@@ -713,6 +732,68 @@ public class PluginImpl extends GlobalConfiguration {
         return maxLogSize;
     }
 
+    /**
+     * Per-pattern timeout for scanning a whole log file, in seconds.
+     * If &lt;= 0, the default {@link #DEFAULT_SCAN_TIMEOUT_FILE_SECONDS} applies.
+     *
+     * @return value in seconds.
+     */
+    public int getScanTimeoutFileSeconds() {
+        if (scanTimeoutFileSeconds <= 0) {
+            return DEFAULT_SCAN_TIMEOUT_FILE_SECONDS;
+        }
+        return scanTimeoutFileSeconds;
+    }
+
+    /**
+     * @param scanTimeoutFileSeconds per-pattern file scan timeout in seconds (&lt;= 0 = default).
+     */
+    @DataBoundSetter
+    public void setScanTimeoutFileSeconds(int scanTimeoutFileSeconds) {
+        this.scanTimeoutFileSeconds = scanTimeoutFileSeconds;
+    }
+
+    /**
+     * Timeout for matching a single line against a pattern, in seconds.
+     * If &lt;= 0, the default {@link #DEFAULT_SCAN_TIMEOUT_LINE_SECONDS} applies.
+     *
+     * @return value in seconds.
+     */
+    public int getScanTimeoutLineSeconds() {
+        if (scanTimeoutLineSeconds <= 0) {
+            return DEFAULT_SCAN_TIMEOUT_LINE_SECONDS;
+        }
+        return scanTimeoutLineSeconds;
+    }
+
+    /**
+     * @param scanTimeoutLineSeconds single-line scan timeout in seconds (&lt;= 0 = default).
+     */
+    @DataBoundSetter
+    public void setScanTimeoutLineSeconds(int scanTimeoutLineSeconds) {
+        this.scanTimeoutLineSeconds = scanTimeoutLineSeconds;
+    }
+
+    /**
+     * Timeout for scanning a single multi-line block, in seconds.
+     * If &lt;= 0, the default {@link #DEFAULT_SCAN_TIMEOUT_BLOCK_SECONDS} applies.
+     *
+     * @return value in seconds.
+     */
+    public int getScanTimeoutBlockSeconds() {
+        if (scanTimeoutBlockSeconds <= 0) {
+            return DEFAULT_SCAN_TIMEOUT_BLOCK_SECONDS;
+        }
+        return scanTimeoutBlockSeconds;
+    }
+
+    /**
+     * @param scanTimeoutBlockSeconds multi-line block scan timeout in seconds (&lt;= 0 = default).
+     */
+    @DataBoundSetter
+    public void setScanTimeoutBlockSeconds(int scanTimeoutBlockSeconds) {
+        this.scanTimeoutBlockSeconds = scanTimeoutBlockSeconds;
+    }
 
     /**
      * Checks if the build with certain result should be analyzed or not.

@@ -16,6 +16,9 @@ metricSquashingEnabled: false
 noCausesEnabled: true
 noCausesMessage: "No problems were identified. Please contribute  causes to help others"
 nrOfScanThreads: 6
+scanTimeoutBlockSeconds: 30
+scanTimeoutFileSeconds: 120
+scanTimeoutLineSeconds: 10
 slackFailureCategories: "ALL"
 slackNotifEnabled: false
 sodVariables:
