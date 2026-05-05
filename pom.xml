@@ -2,10 +2,10 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.sonyericsson.jenkins.plugins.bfa</groupId>
-    <artifactId>build-failure-analyzer</artifactId>
+    <artifactId>build-failure-analyzer-custom</artifactId>
     <version>${revision}.${changelist}</version>
     <packaging>hpi</packaging>
-    <name>Build Failure Analyzer</name>
+    <name>Build Failure Analyzer (Custom)</name>
     <url>https://github.com/jenkinsci/build-failure-analyzer-plugin/blob/master/docs/README.md</url>
 
     <parent>
@@ -20,7 +20,7 @@
         <!-- https://www.jenkins.io/doc/developer/plugin-development/choosing-jenkins-baseline/ -->
         <jenkins.baseline>2.479</jenkins.baseline>
         <jenkins.version>${jenkins.baseline}.3</jenkins.version>
-        <gitHubRepo>jenkinsci/${project.artifactId}-plugin</gitHubRepo>
+        <gitHubRepo>generation-p/build-failure-analyzer-custom</gitHubRepo>
         <checkstyle.version>3.6.0</checkstyle.version>
         <no-test-jar>false</no-test-jar>
         <ban-junit4-imports.skip>false</ban-junit4-imports.skip>
