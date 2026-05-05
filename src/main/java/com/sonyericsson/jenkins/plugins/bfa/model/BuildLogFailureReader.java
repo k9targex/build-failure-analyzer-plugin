@@ -26,6 +26,7 @@ package com.sonyericsson.jenkins.plugins.bfa.model;
 
 import com.sonyericsson.jenkins.plugins.bfa.model.indication.BuildLogIndication;
 import com.sonyericsson.jenkins.plugins.bfa.model.indication.FoundIndication;
+import com.sonyericsson.jenkins.plugins.bfa.pipeline.PipelineLogReader;
 import hudson.model.Run;
 
 import java.io.BufferedReader;
@@ -65,7 +66,7 @@ public class BuildLogFailureReader extends FailureReader {
     public FoundIndication scan(Run build) throws IOException {
         BufferedReader reader = null;
         try {
-            reader = new BufferedReader(build.getLogReader());
+            reader = new BufferedReader(PipelineLogReader.openForScan(build));
             List<FailureCause> causes = new ArrayList<FailureCause>(1);
             FailureCause fc = new FailureCause("somename", "somedescription");
             causes.add(fc);

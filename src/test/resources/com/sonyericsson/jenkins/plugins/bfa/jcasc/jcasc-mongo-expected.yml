@@ -16,6 +16,7 @@ metricSquashingEnabled: false
 noCausesEnabled: true
 noCausesMessage: "No problems were identified. Please contribute  causes to help others"
 nrOfScanThreads: 6
+pipelineStepBasedScanEnabled: true
 scanTimeoutBlockSeconds: 30
 scanTimeoutFileSeconds: 120
 scanTimeoutLineSeconds: 10

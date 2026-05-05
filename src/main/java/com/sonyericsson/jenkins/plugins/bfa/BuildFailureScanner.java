@@ -38,6 +38,7 @@ import com.sonyericsson.jenkins.plugins.bfa.model.ScannerJobProperty;
 import com.sonyericsson.jenkins.plugins.bfa.model.indication.FoundIndication;
 import com.sonyericsson.jenkins.plugins.bfa.model.indication.Indication;
 import com.sonyericsson.jenkins.plugins.bfa.model.indication.MultilineBuildLogIndication;
+import com.sonyericsson.jenkins.plugins.bfa.pipeline.PipelineLogReader;
 import com.sonyericsson.jenkins.plugins.bfa.statistics.StatisticsLogger;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Extension;
@@ -588,7 +589,7 @@ public class BuildFailureScanner extends RunListener<Run> {
         final List<FoundFailureCause> foundFailureCauses = new ArrayList<FoundFailureCause>();
         BufferedReader reader = null;
         try {
-            reader = new BufferedReader(build.getLogReader());
+            reader = new BufferedReader(PipelineLogReader.openForScan(build));
             foundFailureCauses.addAll(
                     FailureReader.scanSingleLinePatterns(
                             singleLineCauses,

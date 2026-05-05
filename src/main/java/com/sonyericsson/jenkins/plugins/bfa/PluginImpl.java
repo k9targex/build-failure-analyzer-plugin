@@ -182,6 +182,7 @@ public class PluginImpl extends GlobalConfiguration {
     private int scanTimeoutFileSeconds;
     private int scanTimeoutLineSeconds;
     private int scanTimeoutBlockSeconds;
+    private Boolean pipelineStepBasedScanEnabled;
 
     private Boolean graphsEnabled;
 
@@ -793,6 +794,26 @@ public class PluginImpl extends GlobalConfiguration {
     @DataBoundSetter
     public void setScanTimeoutBlockSeconds(int scanTimeoutBlockSeconds) {
         this.scanTimeoutBlockSeconds = scanTimeoutBlockSeconds;
+    }
+
+    /**
+     * When enabled, BFA scans only the logs of failed Pipeline steps instead of the
+     * entire console log. Falls back to the full log if the build is not a Pipeline,
+     * if no failed step is found, or if the Pipeline plugin is not installed.
+     * Defaults to {@code true}.
+     *
+     * @return whether Pipeline step-based scanning is enabled.
+     */
+    public boolean isPipelineStepBasedScanEnabled() {
+        return pipelineStepBasedScanEnabled == null || pipelineStepBasedScanEnabled;
+    }
+
+    /**
+     * @param pipelineStepBasedScanEnabled whether Pipeline step-based scanning is enabled.
+     */
+    @DataBoundSetter
+    public void setPipelineStepBasedScanEnabled(boolean pipelineStepBasedScanEnabled) {
+        this.pipelineStepBasedScanEnabled = pipelineStepBasedScanEnabled;
     }
 
     /**

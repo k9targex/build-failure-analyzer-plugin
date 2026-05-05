@@ -106,5 +106,8 @@
         <f:entry title="${%Scan timeout per multi-line block (seconds)}" description="${%scanTimeoutBlockSecondsDescription}">
             <f:number field="scanTimeoutBlockSeconds" default="30" min="0" />
         </f:entry>
+        <f:entry title="${%Pipeline step-based scanning}" description="${%pipelineStepBasedScanEnabledDescription}">
+            <f:checkbox field="pipelineStepBasedScanEnabled" default="true" />
+        </f:entry>
     </f:advanced>
 </j:jelly>

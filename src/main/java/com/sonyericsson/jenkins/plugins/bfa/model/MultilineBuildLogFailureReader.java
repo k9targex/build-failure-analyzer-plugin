@@ -32,6 +32,7 @@ import java.util.logging.Logger;
 
 import com.sonyericsson.jenkins.plugins.bfa.model.indication.FoundIndication;
 import com.sonyericsson.jenkins.plugins.bfa.model.indication.MultilineBuildLogIndication;
+import com.sonyericsson.jenkins.plugins.bfa.pipeline.PipelineLogReader;
 import hudson.model.Run;
 
 
@@ -64,7 +65,7 @@ public class MultilineBuildLogFailureReader extends FailureReader {
     public FoundIndication scan(Run build) throws IOException {
         LineNumberReader reader = null;
         try {
-            reader = new LineNumberReader(build.getLogReader());
+            reader = new LineNumberReader(PipelineLogReader.openForScan(build));
             return scanMultiLineOneFile(build, reader, "log");
         } finally {
             if (reader != null) {
@@ -91,7 +92,7 @@ public class MultilineBuildLogFailureReader extends FailureReader {
         LineNumberReader reader = null;
         long start = System.currentTimeMillis();
         try {
-            reader = new LineNumberReader(build.getLogReader());
+            reader = new LineNumberReader(PipelineLogReader.openForScan(build));
             foundIndication = scanMultiLineOneFile(build, reader, "log");
         } catch (IOException ioe) {
             logger.log(Level.SEVERE, "[BFA] I/O problems during indication analysis: ", ioe);
