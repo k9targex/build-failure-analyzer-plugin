@@ -79,13 +79,13 @@ public class CauseManagement implements RootAction {
     /**
      * The request attribute key where error messages are added.
      */
-    public static final String REQUEST_CAUSE_MANAGEMENT_ERROR = "CauseManagementError";
+    public static final String REQUEST_CAUSE_MANAGEMENT_ERROR = "CauseManagementError-custom";
 
     /**
      * Session key for the last removed {@link FailureCause} by the user. Will be removed by the index page when it
      * displays it.
      */
-    public static final String SESSION_REMOVED_FAILURE_CAUSE = "removed-failureCause";
+    public static final String SESSION_REMOVED_FAILURE_CAUSE = "removed-failureCause-custom";
 
     /**
      * Title for the page displaying the graphs.

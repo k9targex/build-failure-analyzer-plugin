@@ -75,8 +75,8 @@ class MetricsManagerTest {
     void testAddMetric() {
         addMetric(mockedCause);
 
-        verify(metricRegistry, times(1)).counter("jenkins_bfa.cause.myFailureCause");
-        verify(metricRegistry, times(1)).counter("jenkins_bfa.category.category");
+        verify(metricRegistry, times(1)).counter("jenkins_bfa_custom.cause.myFailureCause");
+        verify(metricRegistry, times(1)).counter("jenkins_bfa_custom.category.category");
     }
 
     /**

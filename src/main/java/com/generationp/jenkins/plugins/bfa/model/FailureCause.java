@@ -613,7 +613,7 @@ public class FailureCause implements Serializable, Action, Describable<FailureCa
          * The name of a session attribute which stores the url to the last failed build of the project from
          * whose page the Failure Cause Management page was entered.
          */
-        private static final String LAST_FAILED_BUILD_URL_SESSION_ATTRIBUTE_NAME = "BFA_LAST_FAILED_BUILD_URL";
+        private static final String LAST_FAILED_BUILD_URL_SESSION_ATTRIBUTE_NAME = "BFA_LAST_FAILED_BUILD_URL_CUSTOM";
 
         /**
          * @return the URL to the last failed build of the project from whose page the Failure Cause Management

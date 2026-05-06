@@ -254,7 +254,7 @@ public class ScanOnDemandBaseAction implements Action {
         /**
          * Session key used to store the default scan mode
          */
-        static final String BFA_SOD_BUILD_TYPE = "bfa-sod-buildType";
+        static final String BFA_SOD_BUILD_TYPE = "bfa-sod-buildType-custom";
 
         /**
          * If there is any run in the job matching this scan mode's criteria.

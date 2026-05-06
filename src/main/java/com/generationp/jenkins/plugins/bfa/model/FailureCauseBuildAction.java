@@ -60,7 +60,7 @@ public class FailureCauseBuildAction implements BuildBadgeAction {
     /**
      * The url of this action.
      */
-    public static final String URL_NAME = "bfa";
+    public static final String URL_NAME = "bfa-custom";
     private static final Logger logger = Logger.getLogger(FailureCauseBuildAction.class.getName());
 
     private Run build;

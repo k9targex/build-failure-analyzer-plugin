@@ -153,7 +153,7 @@ public class BuildFailureScannerHudsonTest {
         assertEquals(BUILD_LOG_FIRST_LINE, error.getTextContent().trim(), "Error message not found: ");
 
         MetricRegistry metricRegistry = Metrics.metricRegistry();
-        assertEquals(1, metricRegistry.counter("jenkins_bfa.cause.Error").getCount());
+        assertEquals(1, metricRegistry.counter("jenkins_bfa_custom.cause.Error").getCount());
     }
 
     /**
@@ -216,10 +216,10 @@ public class BuildFailureScannerHudsonTest {
         assertFalse(findCauseInList(causeListFromAction, specificFailureCause));
 
         MetricRegistry metricRegistry = Metrics.metricRegistry();
-        assertEquals(1, metricRegistry.counter("jenkins_bfa.cause.Generic Error").getCount());
-        assertEquals(1, metricRegistry.counter("jenkins_bfa.category.Generic").getCount());
-        assertEquals(0, metricRegistry.counter("jenkins_bfa.cause.Specific Error").getCount());
-        assertEquals(0, metricRegistry.counter("jenkins_bfa.category.Specific").getCount());
+        assertEquals(1, metricRegistry.counter("jenkins_bfa_custom.cause.Generic Error").getCount());
+        assertEquals(1, metricRegistry.counter("jenkins_bfa_custom.category.Generic").getCount());
+        assertEquals(0, metricRegistry.counter("jenkins_bfa_custom.cause.Specific Error").getCount());
+        assertEquals(0, metricRegistry.counter("jenkins_bfa_custom.category.Specific").getCount());
     }
 
     /**
@@ -254,10 +254,10 @@ public class BuildFailureScannerHudsonTest {
         assertTrue(findCauseInList(causeListFromAction, specificFailureCause));
 
         MetricRegistry metricRegistry = Metrics.metricRegistry();
-        assertEquals(0, metricRegistry.counter("jenkins_bfa.cause.Generic Error").getCount());
-        assertEquals(0, metricRegistry.counter("jenkins_bfa.category.Generic").getCount());
-        assertEquals(1, metricRegistry.counter("jenkins_bfa.cause.Specific Error").getCount());
-        assertEquals(1, metricRegistry.counter("jenkins_bfa.category.Specific").getCount());
+        assertEquals(0, metricRegistry.counter("jenkins_bfa_custom.cause.Generic Error").getCount());
+        assertEquals(0, metricRegistry.counter("jenkins_bfa_custom.category.Generic").getCount());
+        assertEquals(1, metricRegistry.counter("jenkins_bfa_custom.cause.Specific Error").getCount());
+        assertEquals(1, metricRegistry.counter("jenkins_bfa_custom.category.Specific").getCount());
     }
 
     /**
@@ -303,8 +303,8 @@ public class BuildFailureScannerHudsonTest {
                 "Error message not found: ");
 
         MetricRegistry metricRegistry = Metrics.metricRegistry();
-        assertEquals(1, metricRegistry.counter("jenkins_bfa.cause.Error").getCount());
-        assertEquals(1, metricRegistry.counter("jenkins_bfa.category.category").getCount());
+        assertEquals(1, metricRegistry.counter("jenkins_bfa_custom.cause.Error").getCount());
+        assertEquals(1, metricRegistry.counter("jenkins_bfa_custom.category.category").getCount());
     }
 
     /**
@@ -374,9 +374,9 @@ public class BuildFailureScannerHudsonTest {
         assertEquals(BUILD_LOG_FIRST_LINE, error.getTextContent().trim(), "Error message not found: ");
 
         MetricRegistry metricRegistry = Metrics.metricRegistry();
-        assertEquals(1, metricRegistry.counter("jenkins_bfa.cause.Error").getCount());
-        assertEquals(1, metricRegistry.counter("jenkins_bfa.cause.Other cause").getCount());
-        assertEquals(2, metricRegistry.counter("jenkins_bfa.category.category").getCount());
+        assertEquals(1, metricRegistry.counter("jenkins_bfa_custom.cause.Error").getCount());
+        assertEquals(1, metricRegistry.counter("jenkins_bfa_custom.cause.Other cause").getCount());
+        assertEquals(2, metricRegistry.counter("jenkins_bfa_custom.category.category").getCount());
     }
 
     /**
