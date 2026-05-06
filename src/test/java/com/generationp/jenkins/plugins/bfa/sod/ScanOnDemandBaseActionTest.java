@@ -82,7 +82,7 @@ class ScanOnDemandBaseActionTest {
         }
         assertNull(build.getAction(FailureCauseBuildAction.class));
         j.assertBuildStatus(Result.FAILURE, build);
-        j.createWebClient().getPage(project, "scan-on-demand/nonscanned-custom/performScan");
+        j.createWebClient().getPage(project, "scan-on-demand-custom/nonscanned-custom/performScan");
         ScanOnDemandQueue.shutdown();
         assertNotNull(build.getAction(FailureCauseBuildAction.class));
 
@@ -106,7 +106,7 @@ class ScanOnDemandBaseActionTest {
         }
         assertNull(build.getAction(FailureCauseBuildAction.class));
         j.assertBuildStatus(Result.SUCCESS, build);
-        j.createWebClient().getPage(project, "scan-on-demand/nonscanned-custom/performScan");
+        j.createWebClient().getPage(project, "scan-on-demand-custom/nonscanned-custom/performScan");
         ScanOnDemandQueue.shutdown();
         assertNull(build.getAction(FailureCauseBuildAction.class));
     }
@@ -122,7 +122,7 @@ class ScanOnDemandBaseActionTest {
     @Test
     void testShouldOnlyShowWhenHasPermission(JenkinsRule j) throws Exception {
         FreeStyleProject project = j.createFreeStyleProject();
-        String expectedHref = "/jenkins/" + project.getUrl() + "scan-on-demand";
+        String expectedHref = "/jenkins/" + project.getUrl() + "scan-on-demand-custom";
 
         SecurityRealm securityRealm = j.createDummySecurityRealm();
         Jenkins.get().setSecurityRealm(securityRealm);
@@ -165,7 +165,7 @@ class ScanOnDemandBaseActionTest {
     void testShouldOnlyShowWhenScanningIsEnabled(JenkinsRule j) throws Exception {
         FreeStyleProject project = j.createFreeStyleProject();
         project = (FreeStyleProject)j.configRoundtrip((Item)project);
-        String expectedHref = "/jenkins/" + project.getUrl() + "scan-on-demand";
+        String expectedHref = "/jenkins/" + project.getUrl() + "scan-on-demand-custom";
 
         JenkinsRule.WebClient client = j.createWebClient();
 

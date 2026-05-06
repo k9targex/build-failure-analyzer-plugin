@@ -100,7 +100,7 @@ public class ScanOnDemandBaseAction implements Action {
     @Override
     public String getUrlName() {
         if (hasPermission()) {
-            return "scan-on-demand";
+            return "scan-on-demand-custom";
         } else {
             return null;
         }
