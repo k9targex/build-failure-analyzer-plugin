@@ -49,7 +49,7 @@ l.layout(title: _("Failure Scan Options"), norefresh: true) {
             f.section(title: _("Select the option and scan the builds")) {
                 ScanOnDemandBaseAction.ScanMode.all().each { ScanOnDemandBaseAction.ScanMode option ->
                     f.entry(field: option.urlName, class: "bfa-scan-mode-build-type-radio-entry",
-                            help: "/plugin/build-failure-analyzer/help/sod/${option.urlName}.html") {
+                            help: "/plugin/build-failure-analyzer-custom/help/sod/${option.urlName}.html") {
                         span(class: "bfa-entry-data-holder", "data-root-url": "${rootURL}", "data-option-full-url": "${option.getFullUrl()}")
                         f.radio(name: "buildType",
                                 value: option.urlName,

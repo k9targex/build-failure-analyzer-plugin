@@ -268,12 +268,18 @@ public class PluginImpl extends GlobalConfiguration {
     }
 
     /**
+     * The URL path under which Jenkins serves this plugin's static resources.
+     * Equals {@code /plugin/<artifactId>}.
+     */
+    public static final String PLUGIN_URL = "/plugin/build-failure-analyzer-custom";
+
+    /**
      * Returns the base relative URI for static resources packaged in webapp.
      *
      * @return the base URI.
      */
     public static String getStaticResourcesBase() {
-        return "/plugin/build-failure-analyzer";
+        return PLUGIN_URL;
     }
 
     /**

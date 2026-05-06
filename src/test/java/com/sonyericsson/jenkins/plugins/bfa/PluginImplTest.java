@@ -71,7 +71,7 @@ class PluginImplTest {
      */
     @Test
     void testGetStaticResourcesBase() {
-        assertEquals("/plugin/build-failure-analyzer", PluginImpl.getStaticResourcesBase());
+        assertEquals("/plugin/build-failure-analyzer-custom", PluginImpl.getStaticResourcesBase());
     }
 
 
@@ -83,7 +83,7 @@ class PluginImplTest {
      */
     @Test
     void testGetStaticImagesBase() {
-        assertEquals("/plugin/build-failure-analyzer/images", PluginImpl.getStaticImagesBase());
+        assertEquals("/plugin/build-failure-analyzer-custom/images", PluginImpl.getStaticImagesBase());
     }
 
     /**
