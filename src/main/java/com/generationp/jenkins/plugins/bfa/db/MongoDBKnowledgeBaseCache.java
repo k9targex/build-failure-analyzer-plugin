@@ -1,0 +1,191 @@
+/*
+ * The MIT License
+ *
+ * Copyright 2012 Sony Mobile Communications AB. All rights reserved.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
+package com.generationp.jenkins.plugins.bfa.db;
+
+import com.mongodb.MongoException;
+import com.mongodb.client.DistinctIterable;
+import com.mongodb.client.FindIterable;
+import com.mongodb.client.MongoCursor;
+import com.generationp.jenkins.plugins.bfa.model.FailureCause;
+import org.mongojack.JacksonMongoCollection;
+
+import java.util.Collections;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+import static com.generationp.jenkins.plugins.bfa.db.MongoDBKnowledgeBase.NOT_REMOVED_QUERY_FILTER;
+
+/**
+ * Cache for the MongoDBKnowledgeBase.
+ *
+ * @author Tomas Westling &lt;tomas.westling@sonyericsson.com&gt;
+ */
+public class MongoDBKnowledgeBaseCache {
+
+    private Semaphore shouldUpdate;
+    private UpdateThread updaterThread;
+    private Timer timer;
+    private TimerTask timerTask;
+    private List<FailureCause> cachedFailureCauses;
+    private List<String> categories;
+    private JacksonMongoCollection<FailureCause> jacksonCollection;
+
+    private static final long CACHE_UPDATE_INTERVAL = 60000;
+    private static final Logger logger = Logger.getLogger(MongoDBKnowledgeBase.class.getName());
+
+    /**
+     * Standard constructor.
+     * @param jacksonCollection the JacksonDBCollection, used for accessing the database.
+     */
+    public MongoDBKnowledgeBaseCache(JacksonMongoCollection<FailureCause> jacksonCollection) {
+        this.jacksonCollection = jacksonCollection;
+    }
+
+    /**
+     * Run when the cache, including the update mechanism, should start running.
+     */
+    public void start() {
+        shouldUpdate = new Semaphore();
+        updaterThread = new UpdateThread();
+        updaterThread.start();
+        timer = new Timer();
+        timerTask = new TimerTask() {
+            @Override
+            public void run() {
+                shouldUpdate.release();
+            }
+        };
+        timer.scheduleAtFixedRate(timerTask, 0, CACHE_UPDATE_INTERVAL);
+    }
+
+    /**
+     * Run when we want to shut down the cache.
+     */
+    public void stop() {
+        timer.cancel();
+        timer = null;
+        timerTask = null;
+        updaterThread.stopThread();
+        updaterThread = null;
+    }
+
+    /**
+     * Signal that an update of the Cache should be made.
+     */
+    public void updateCache() {
+        if (shouldUpdate != null) {
+            shouldUpdate.release();
+        }
+    }
+
+    /**
+     * Getter for the cachedFailureCauses.
+     * @return the causes.
+     */
+    public List<FailureCause> getCauses() {
+        if (cachedFailureCauses == null) {
+            cachedFailureCauses = loadCauses();
+        }
+        return cachedFailureCauses;
+    }
+
+    /**
+     * Getter for the categories of all FailureCauses.
+     * @return the categories.
+     */
+    public List<String> getCategories() {
+        if (categories == null) {
+            categories = loadCategories();
+        }
+        return categories;
+    }
+
+    /**
+     * The thread responsible for updating the MongoDB cache.
+     */
+    protected class UpdateThread extends Thread {
+        private volatile boolean stop = false;
+        @Override
+        public void run() {
+            while (!stop) {
+                try {
+                    shouldUpdate.acquire();
+                    if (stop) {
+                        break;
+                    }
+                    cachedFailureCauses = loadCauses();
+                    categories = loadCategories();
+                } catch (InterruptedException e) {
+                    logger.log(Level.WARNING, "Updater thread interrupted", e);
+                }
+            }
+        }
+        /**
+         * Stops the execution of this thread.
+         */
+        protected void stopThread() {
+            stop = true;
+            shouldUpdate.release();
+        }
+    }
+
+    private List<FailureCause> loadCauses() {
+        try {
+            List<FailureCause> list = new LinkedList<FailureCause>();
+            FindIterable<FailureCause> dbCauses =  jacksonCollection.find(NOT_REMOVED_QUERY_FILTER);
+            final MongoCursor<FailureCause> iterator = dbCauses.iterator();
+            while (iterator.hasNext()) {
+                list.add(iterator.next());
+            }
+            return list;
+        } catch (MongoException e) {
+            logger.log(Level.SEVERE, "MongoException caught when updating cache: ", e);
+        }
+
+        return Collections.emptyList();
+    }
+
+    private List<String> loadCategories() {
+        try {
+            List<String> catList = new LinkedList<String>();
+            final DistinctIterable<String> categoriesIterable = jacksonCollection.distinct(
+                    "categories", String.class);
+            final MongoCursor<String> catIterator = categoriesIterable.iterator();
+            while (catIterator.hasNext()) {
+                catList.add(catIterator.next());
+            }
+            return catList;
+        } catch (MongoException e) {
+            logger.log(Level.SEVERE, "MongoException caught when updating cache: ", e);
+        }
+
+        return Collections.emptyList();
+    }
+
+}
