@@ -24,6 +24,10 @@
 
 package com.sonyericsson.jenkins.plugins.bfa.utils;
 
+import com.sonyericsson.jenkins.plugins.bfa.PluginImpl;
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+import hudson.ExtensionList;
+
 import java.io.IOException;
 import java.net.URL;
 import java.util.logging.Level;
@@ -45,6 +49,28 @@ public final class BfaUtils {
      * Utility classes should not have a public or default constructor.
      */
     private BfaUtils() {
+    }
+
+    /**
+     * Returns the active {@link PluginImpl}, or {@code null} when Jenkins is not
+     * fully initialised (e.g. plain unit tests or very early startup).
+     * {@link PluginImpl#getInstance()} throws {@link IndexOutOfBoundsException}
+     * when the extension list is empty, so prefer this helper from non-Jenkins
+     * contexts.
+     *
+     * @return plugin instance, or {@code null} if not available.
+     */
+    @CheckForNull
+    public static PluginImpl tryGetPluginInstance() {
+        try {
+            ExtensionList<PluginImpl> list = ExtensionList.lookup(PluginImpl.class);
+            if (list == null || list.isEmpty()) {
+                return null;
+            }
+            return list.get(0);
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /**

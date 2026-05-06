@@ -29,7 +29,7 @@ import com.google.common.base.Joiner;
 import com.sonyericsson.jenkins.plugins.bfa.PluginImpl;
 import com.sonyericsson.jenkins.plugins.bfa.model.indication.FoundIndication;
 import com.sonyericsson.jenkins.plugins.bfa.model.indication.Indication;
-import hudson.ExtensionList;
+import com.sonyericsson.jenkins.plugins.bfa.utils.BfaUtils;
 import hudson.Util;
 import hudson.console.ConsoleNote;
 import hudson.model.AbstractBuild;
@@ -87,29 +87,10 @@ public abstract class FailureReader {
     }
 
     /**
-     * Returns the active {@link PluginImpl}, or {@code null} when Jenkins is not running
-     * (e.g. in plain unit tests). {@link PluginImpl#getInstance()} throws when the
-     * extension list is empty, so we go through {@link ExtensionList#lookup} directly.
-     *
-     * @return plugin instance or {@code null}.
-     */
-    private static PluginImpl tryPluginInstance() {
-        try {
-            ExtensionList<PluginImpl> list = ExtensionList.lookup(PluginImpl.class);
-            if (list == null || list.isEmpty()) {
-                return null;
-            }
-            return list.get(0);
-        } catch (RuntimeException e) {
-            return null;
-        }
-    }
-
-    /**
      * @return timeout for matching a single line against a pattern (ms).
      */
     private static long timeoutLineMs() {
-        PluginImpl plugin = tryPluginInstance();
+        PluginImpl plugin = BfaUtils.tryGetPluginInstance();
         int seconds;
         if (plugin == null) {
             seconds = PluginImpl.DEFAULT_SCAN_TIMEOUT_LINE_SECONDS;
@@ -123,7 +104,7 @@ public abstract class FailureReader {
      * @return per-pattern timeout for scanning a whole file (ms).
      */
     private static long timeoutFileMs() {
-        PluginImpl plugin = tryPluginInstance();
+        PluginImpl plugin = BfaUtils.tryGetPluginInstance();
         int seconds;
         if (plugin == null) {
             seconds = PluginImpl.DEFAULT_SCAN_TIMEOUT_FILE_SECONDS;
@@ -137,7 +118,7 @@ public abstract class FailureReader {
      * @return timeout for scanning a single multi-line block (ms).
      */
     private static long timeoutBlockMs() {
-        PluginImpl plugin = tryPluginInstance();
+        PluginImpl plugin = BfaUtils.tryGetPluginInstance();
         int seconds;
         if (plugin == null) {
             seconds = PluginImpl.DEFAULT_SCAN_TIMEOUT_BLOCK_SECONDS;

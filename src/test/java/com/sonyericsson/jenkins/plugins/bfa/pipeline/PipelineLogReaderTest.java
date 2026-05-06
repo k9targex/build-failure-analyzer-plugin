@@ -127,6 +127,84 @@ class PipelineLogReaderTest {
         }
     }
 
+    /**
+     * On a successful Pipeline build (no failed FlowNode) the helper must fall back
+     * to the full log. BFA may scan successful builds via on-demand scanning.
+     *
+     * @param j the JenkinsRule.
+     * @throws Exception if so.
+     */
+    @Test
+    void successfulPipelineFallsBackToFullLog(JenkinsRule j) throws Exception {
+        WorkflowJob proj = j.jenkins.createProject(WorkflowJob.class, "pipeline-success");
+        proj.setDefinition(new CpsFlowDefinition(
+                "node {\n"
+                        + "  echo 'GREEN_BUILD_MARKER'\n"
+                        + "}\n",
+                true));
+        WorkflowRun run = j.assertBuildStatusSuccess(proj.scheduleBuild2(0));
+        try (Reader r = PipelineLogReader.openForScan(run)) {
+            String log = readAll(r);
+            assertTrue(log.contains("GREEN_BUILD_MARKER"),
+                    "Successful pipeline must fall back to full log, got: " + log);
+        }
+    }
+
+    /**
+     * On a Pipeline with parallel branches, both branches' failures must be present
+     * in the narrowed reader, regardless of which branch failed first. We deliberately
+     * don't pin order — BFA scans the whole reader, so as long as both markers appear,
+     * regex matching works correctly.
+     *
+     * @param j the JenkinsRule.
+     * @throws Exception if so.
+     */
+    @Test
+    void parallelBranchesIncludeAllFailures(JenkinsRule j) throws Exception {
+        WorkflowJob proj = j.jenkins.createProject(WorkflowJob.class, "pipeline-parallel");
+        proj.setDefinition(new CpsFlowDefinition(
+                "node {\n"
+                        + "  parallel(\n"
+                        + "    branchA: { error 'ALPHA_FAILURE_MARKER' },\n"
+                        + "    branchB: { error 'BETA_FAILURE_MARKER' }\n"
+                        + "  )\n"
+                        + "}\n",
+                true));
+        WorkflowRun run = j.assertBuildStatus(Result.FAILURE, proj.scheduleBuild2(0));
+        try (Reader r = PipelineLogReader.openForScan(run)) {
+            String log = readAll(r);
+            assertTrue(log.contains("ALPHA_FAILURE_MARKER"),
+                    "Parallel branchA marker must be present, got: " + log);
+            assertTrue(log.contains("BETA_FAILURE_MARKER"),
+                    "Parallel branchB marker must be present, got: " + log);
+        }
+    }
+
+    /**
+     * The 2-arg overload writes a one-line summary into the supplied PrintStream so
+     * admins can see in the BFA scan log which mode was used.
+     *
+     * @param j the JenkinsRule.
+     * @throws Exception if so.
+     */
+    @Test
+    void scanLogReceivesSourceSummary(JenkinsRule j) throws Exception {
+        WorkflowJob proj = j.jenkins.createProject(WorkflowJob.class, "pipeline-scanlog");
+        proj.setDefinition(new CpsFlowDefinition(
+                "node { error 'TRIGGER' }\n",
+                true));
+        WorkflowRun run = j.assertBuildStatus(Result.FAILURE, proj.scheduleBuild2(0));
+        java.io.ByteArrayOutputStream sink = new java.io.ByteArrayOutputStream();
+        try (java.io.PrintStream scanLog = new java.io.PrintStream(sink, true, "UTF-8");
+             Reader r = PipelineLogReader.openForScan(run, scanLog)) {
+            // drain
+            readAll(r);
+            String summary = sink.toString("UTF-8");
+            assertTrue(summary.contains("Pipeline narrow scan"),
+                    "Expected scanLog to mention narrow mode, got: " + summary);
+        }
+    }
+
     private static String readAll(Reader r) throws java.io.IOException {
         try (BufferedReader br = new BufferedReader(r)) {
             return br.lines().collect(Collectors.joining("\n"));

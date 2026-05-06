@@ -589,7 +589,7 @@ public class BuildFailureScanner extends RunListener<Run> {
         final List<FoundFailureCause> foundFailureCauses = new ArrayList<FoundFailureCause>();
         BufferedReader reader = null;
         try {
-            reader = new BufferedReader(PipelineLogReader.openForScan(build));
+            reader = new BufferedReader(PipelineLogReader.openForScan(build, scanLog));
             foundFailureCauses.addAll(
                     FailureReader.scanSingleLinePatterns(
                             singleLineCauses,
