@@ -69,12 +69,34 @@ l.layout(norefresh: true) {
       request2.getSession().removeAttribute(CauseManagement.SESSION_REMOVED_FAILURE_CAUSE);
     }
 
+    def importResult = request2.getSession(true).getAttribute(CauseManagement.SESSION_IMPORT_RESULT)
+    if (importResult != null) {
+      div(class: "info", style: "margin-top: 10px; margin-bottom: 10px") {
+        text(importResult)
+      }
+      request2.getSession().removeAttribute(CauseManagement.SESSION_IMPORT_RESULT);
+    }
+
     l.app_bar(title: appBarTitle) {
       //The New Cause link
       if (h.hasPermission(PluginImpl.UPDATE_PERMISSION)) {
          a(class: "jenkins-button jenkins-button--primary", href: "new") {
           l.icon(src:"symbol-add")
           text(_("Create new"))
+        }
+      }
+      //Import from JSON
+      if (h.hasPermission(PluginImpl.UPDATE_PERMISSION)) {
+        a(class: "jenkins-button", href: "import") {
+          l.icon(src:"symbol-add")
+          text(_("Import from JSON"))
+        }
+      }
+      //Export all to JSON
+      if (h.hasPermission(PluginImpl.VIEW_PERMISSION)) {
+        a(class: "jenkins-button", href: "exportCauses") {
+          l.icon(src:"symbol-add")
+          text(_("Export all"))
         }
       }
     }
@@ -87,7 +109,7 @@ l.layout(norefresh: true) {
       thead {
         th{text(_("Name"))}
         th{text(_("Categories"))}
-        th{text(_("Description"))}
+        th{text(_("Regex"))}
         th{text(_("Comment"))}
         th{text(_("Modified"))}
         if (PluginImpl.getInstance().getKnowledgeBase().isEnableStatistics()) {
@@ -108,8 +130,18 @@ l.layout(norefresh: true) {
             td{
               text(cause.getCategoriesAsString())
             }
-            td{
-              raw(app.markupFormatter.translate(cause.getDescription()))
+            td(style: "font-family: monospace; font-size: 12px; max-width: 600px; overflow-wrap: anywhere") {
+              def indications = cause.getIndications()
+              if (indications == null || indications.isEmpty()) {
+                text("—")
+              } else {
+                indications.eachWithIndex { ind, i ->
+                  if (i > 0) {
+                    br()
+                  }
+                  text(ind.getUserProvidedExpression())
+                }
+              }
             }
             td{
               text(cause.getComment())

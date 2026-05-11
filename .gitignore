@@ -13,3 +13,8 @@ work
 .settings
 .classpath
 .project
+artifacts/current-artifacts
+
+# Local migration data — NEVER commit, contains company-specific failure causes
+/build-failure-analyzer*.xml
+.claude/handoffs/

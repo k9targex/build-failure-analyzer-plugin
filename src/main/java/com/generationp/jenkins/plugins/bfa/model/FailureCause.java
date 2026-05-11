@@ -317,6 +317,20 @@ public class FailureCause implements Serializable, Action, Describable<FailureCa
     }
 
     /**
+     * Replaces all current indications with the supplied list. Used by JSON import
+     * when overwriting an existing cause.
+     *
+     * @param indications new indications, or {@code null} to clear.
+     */
+    public void setIndications(List<Indication> indications) {
+        if (indications == null) {
+            this.indications = new LinkedList<Indication>();
+        } else {
+            this.indications = new LinkedList<>(indications);
+        }
+    }
+
+    /**
      * The id.
      *
      * @return the id.

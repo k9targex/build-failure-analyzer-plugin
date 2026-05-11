@@ -293,6 +293,8 @@ public class MongoDBKnowledgeBase extends KnowledgeBase {
         keys.put("comment", 1);
         keys.put("modifications", 1);
         keys.put("lastOccurred", 1);
+        // Cause Management list shows the indication regex(es) instead of the description.
+        keys.put("indications", 1);
         BasicDBObject orderBy = new BasicDBObject("name", 1);
         final FindIterable<FailureCause> dbCauses = getJacksonCollection().find(NOT_REMOVED_QUERY_FILTER);
         dbCauses.sort(orderBy);

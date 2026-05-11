@@ -25,8 +25,13 @@
 
 package com.generationp.jenkins.plugins.bfa;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.generationp.jenkins.plugins.bfa.model.FailureCause;
+import com.generationp.jenkins.plugins.bfa.model.indication.BuildLogIndication;
 import com.generationp.jenkins.plugins.bfa.model.indication.Indication;
+import com.generationp.jenkins.plugins.bfa.model.indication.MultilineBuildLogIndication;
 
 import hudson.Extension;
 import hudson.ExtensionList;
@@ -37,6 +42,14 @@ import hudson.model.Hudson;
 import hudson.model.ModelObject;
 import hudson.model.RootAction;
 import hudson.security.Permission;
+import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import jenkins.model.Jenkins;
@@ -241,6 +254,223 @@ public class CauseManagement implements RootAction {
         }
         response.sendRedirect2("./");
     }
+
+    /**
+     * Indication type tag used in the import/export JSON format. Stable wire name independent
+     * of the Java class FQN, so that JSON files survive class refactors.
+     */
+    private static final String INDICATION_TYPE_BUILD_LOG = "buildLog";
+    /** @see #INDICATION_TYPE_BUILD_LOG */
+    private static final String INDICATION_TYPE_MULTILINE = "multilineBuildLog";
+
+    /**
+     * Returns the import/export JSON for the supplied list of causes.
+     *
+     * <p>Format:
+     * <pre>
+     * [
+     *   {
+     *     "name":        "...",
+     *     "description": "...",
+     *     "comment":     "...",
+     *     "categories":  ["A","B"],
+     *     "indications": [
+     *        {"type": "buildLog",          "pattern": ".*foo.*"},
+     *        {"type": "multilineBuildLog", "pattern": ".*bar.*"}
+     *     ]
+     *   }, ...
+     * ]
+     * </pre>
+     *
+     * @param causes causes to serialize.
+     * @return pretty-printed JSON.
+     * @throws IOException on serialization failure.
+     */
+    static String causesToJson(Collection<FailureCause> causes) throws IOException {
+        List<Map<String, Object>> out = new ArrayList<>(causes.size());
+        for (FailureCause cause : causes) {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("name", cause.getName());
+            entry.put("description", cause.getDescription());
+            entry.put("comment", cause.getComment());
+            List<String> categoryList;
+            if (cause.getCategories() == null) {
+                categoryList = new ArrayList<>();
+            } else {
+                categoryList = cause.getCategories();
+            }
+            entry.put("categories", categoryList);
+            List<Map<String, String>> indOut = new ArrayList<>();
+            if (cause.getIndications() != null) {
+                for (Indication ind : cause.getIndications()) {
+                    Map<String, String> indMap = new LinkedHashMap<>();
+                    if (ind instanceof MultilineBuildLogIndication) {
+                        indMap.put("type", INDICATION_TYPE_MULTILINE);
+                    } else {
+                        indMap.put("type", INDICATION_TYPE_BUILD_LOG);
+                    }
+                    indMap.put("pattern", ind.getUserProvidedExpression());
+                    indOut.add(indMap);
+                }
+            }
+            entry.put("indications", indOut);
+            out.add(entry);
+        }
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.enable(SerializationFeature.INDENT_OUTPUT);
+        return mapper.writeValueAsString(out);
+    }
+
+    /**
+     * Parses the import JSON. Accepts both a single object and an array of objects.
+     *
+     * @param json input JSON.
+     * @return list of fully constructed FailureCauses (not yet saved).
+     * @throws IOException on parse failure.
+     */
+    static List<FailureCause> jsonToCauses(String json) throws IOException {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode root = mapper.readTree(json);
+        List<JsonNode> entries = new ArrayList<>();
+        if (root.isArray()) {
+            root.forEach(entries::add);
+        } else if (root.isObject()) {
+            entries.add(root);
+        } else {
+            throw new IOException("Expected JSON object or array, got: " + root.getNodeType());
+        }
+        List<FailureCause> result = new ArrayList<>(entries.size());
+        for (JsonNode node : entries) {
+            String name = textOrNull(node, "name");
+            if (name == null || name.isEmpty()) {
+                throw new IOException("Cause is missing the required 'name' field");
+            }
+            String description = textOr(node, "description", "");
+            String comment = textOr(node, "comment", "");
+            FailureCause cause = new FailureCause(name, description, comment);
+            JsonNode cats = node.get("categories");
+            if (cats != null && cats.isArray()) {
+                List<String> categoryList = new ArrayList<>();
+                cats.forEach(c -> categoryList.add(c.asText()));
+                cause.setCategories(categoryList);
+            }
+            JsonNode inds = node.get("indications");
+            if (inds == null || !inds.isArray() || inds.size() == 0) {
+                throw new IOException("Cause '" + name + "' has no indications");
+            }
+            for (JsonNode ind : inds) {
+                String type = textOr(ind, "type", INDICATION_TYPE_BUILD_LOG);
+                String pattern = textOrNull(ind, "pattern");
+                if (pattern == null || pattern.isEmpty()) {
+                    throw new IOException("Cause '" + name + "' has an indication without 'pattern'");
+                }
+                if (INDICATION_TYPE_MULTILINE.equals(type)) {
+                    cause.addIndication(new MultilineBuildLogIndication(pattern));
+                } else if (INDICATION_TYPE_BUILD_LOG.equals(type)) {
+                    cause.addIndication(new BuildLogIndication(pattern));
+                } else {
+                    throw new IOException("Cause '" + name + "' has unknown indication type '" + type + "'");
+                }
+            }
+            result.add(cause);
+        }
+        return result;
+    }
+
+    private static String textOrNull(JsonNode parent, String field) {
+        JsonNode node = parent.get(field);
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        return node.asText();
+    }
+
+    private static String textOr(JsonNode parent, String field, String defaultValue) {
+        String v = textOrNull(parent, field);
+        if (v == null) {
+            return defaultValue;
+        }
+        return v;
+    }
+
+    /**
+     * Web call: download all causes as a JSON file.
+     *
+     * @param request the stapler request.
+     * @param response the stapler response.
+     * @throws Exception on knowledge base or IO failure.
+     */
+    public void doExportCauses(StaplerRequest2 request, StaplerResponse2 response) throws Exception {
+        Jenkins.getInstance().checkPermission(PluginImpl.VIEW_PERMISSION);
+        Collection<FailureCause> causes = PluginImpl.getInstance().getKnowledgeBase().getCauses();
+        String json = causesToJson(causes);
+        byte[] body = json.getBytes(StandardCharsets.UTF_8);
+        String fileName = "bfa-causes-" + new SimpleDateFormat("yyyy-MM-dd").format(new Date()) + ".json";
+        response.setContentType("application/json; charset=utf-8");
+        response.setHeader("Content-Disposition", "attachment; filename=\"" + fileName + "\"");
+        response.setContentLength(body.length);
+        response.getOutputStream().write(body);
+    }
+
+    /**
+     * Web call: import causes from a JSON payload (file upload or pasted text).
+     *
+     * @param json the pasted JSON text (from textarea).
+     * @param overwrite whether to overwrite causes with the same name.
+     * @param request the stapler request.
+     * @param response the stapler response.
+     * @throws IOException on redirect.
+     */
+    @POST
+    public void doImportCauses(@QueryParameter("json") String json,
+                               @QueryParameter("overwrite") boolean overwrite,
+                               StaplerRequest2 request, StaplerResponse2 response) throws IOException {
+        Jenkins.getInstance().checkPermission(PluginImpl.UPDATE_PERMISSION);
+        try {
+            String payload = Util.fixEmptyAndTrim(json);
+            if (payload == null) {
+                throw new IOException("No JSON content was supplied");
+            }
+            List<FailureCause> parsed = jsonToCauses(payload);
+            // Index existing causes by name once (case-sensitive) for overwrite mode.
+            Map<String, FailureCause> existingByName = new LinkedHashMap<>();
+            if (overwrite) {
+                for (FailureCause c : PluginImpl.getInstance().getKnowledgeBase().getCauses()) {
+                    existingByName.put(c.getName(), c);
+                }
+            }
+            int added = 0;
+            int updated = 0;
+            int skipped = 0;
+            for (FailureCause cause : parsed) {
+                FailureCause existing = existingByName.get(cause.getName());
+                if (existing != null) {
+                    if (overwrite) {
+                        // Replace by name: drop the old record, insert the parsed one.
+                        PluginImpl.getInstance().getKnowledgeBase().removeCause(existing.getId());
+                        PluginImpl.getInstance().getKnowledgeBase().addCause(cause);
+                        updated++;
+                    } else {
+                        skipped++;
+                    }
+                } else {
+                    PluginImpl.getInstance().getKnowledgeBase().addCause(cause);
+                    added++;
+                }
+            }
+            request.getSession(true).setAttribute(SESSION_IMPORT_RESULT,
+                    "Imported: " + added + " added, " + updated + " updated, " + skipped + " skipped");
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to import causes from JSON", e);
+            setErrorMessage("Import failed: " + e.getMessage());
+        }
+        response.sendRedirect2("./");
+    }
+
+    /**
+     * Session attribute key for the result message of the last import.
+     */
+    public static final String SESSION_IMPORT_RESULT = "bfa-import-result-custom";
 
     /**
      * The "owner" of this Action. Default this would be {@link hudson.model.Hudson#getInstance()} but if the class is
