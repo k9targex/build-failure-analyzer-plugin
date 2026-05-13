@@ -77,12 +77,14 @@ public final class PipelineLogReader {
 
     private static final Logger logger = Logger.getLogger(PipelineLogReader.class.getName());
 
+    private static final long BYTES_IN_MEGABYTE = 1024L * 1024L;
+
     /**
      * Fallback for the per-step log tail cap when {@link PluginImpl} is not available (e.g. during early
      * plugin lifecycle or in tests). Configured at runtime via {@link PluginImpl#getMaxStepLogSizeMb()}.
      */
     private static final long FALLBACK_MAX_STEP_LOG_BYTES =
-            (long) PluginImpl.DEFAULT_MAX_STEP_LOG_SIZE_MB * 1024L * 1024L;
+            (long)PluginImpl.DEFAULT_MAX_STEP_LOG_SIZE_MB * BYTES_IN_MEGABYTE;
 
     /**
      * Error message prefix that Jenkins workflow uses when one parallel branch fails and another sibling branch
@@ -102,7 +104,7 @@ public final class PipelineLogReader {
         if (plugin == null) {
             return FALLBACK_MAX_STEP_LOG_BYTES;
         }
-        return (long) plugin.getMaxStepLogSizeMb() * 1024L * 1024L;
+        return (long)plugin.getMaxStepLogSizeMb() * BYTES_IN_MEGABYTE;
     }
 
     private PipelineLogReader() {
@@ -344,7 +346,10 @@ public final class PipelineLogReader {
             // Their step log contains the cancelled branch's in-flight output (often very large), which is
             // unrelated to the actual root cause that BFA is trying to identify.
             Throwable cause = err.getError();
-            String message = (cause != null) ? cause.getMessage() : null;
+            String message = null;
+            if (cause != null) {
+                message = cause.getMessage();
+            }
             if (message != null && message.startsWith(PARALLEL_PROPAGATION_PREFIX)) {
                 continue;
             }
