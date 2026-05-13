@@ -28,6 +28,7 @@ import com.generationp.jenkins.plugins.bfa.PluginImpl;
 import com.generationp.jenkins.plugins.bfa.utils.BfaUtils;
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
+import hudson.console.AnnotatedLargeText;
 import hudson.model.Run;
 import org.jenkinsci.plugins.workflow.actions.ErrorAction;
 import org.jenkinsci.plugins.workflow.flow.FlowExecution;
@@ -75,6 +76,34 @@ import java.util.logging.Logger;
 public final class PipelineLogReader {
 
     private static final Logger logger = Logger.getLogger(PipelineLogReader.class.getName());
+
+    /**
+     * Fallback for the per-step log tail cap when {@link PluginImpl} is not available (e.g. during early
+     * plugin lifecycle or in tests). Configured at runtime via {@link PluginImpl#getMaxStepLogSizeMb()}.
+     */
+    private static final long FALLBACK_MAX_STEP_LOG_BYTES =
+            (long) PluginImpl.DEFAULT_MAX_STEP_LOG_SIZE_MB * 1024L * 1024L;
+
+    /**
+     * Error message prefix that Jenkins workflow uses when one parallel branch fails and another sibling branch
+     * is cancelled as a result. Atoms with this propagated error did not themselves fail; including their logs
+     * just adds large blobs of unrelated content (the cancelled sibling's in-flight work) to the narrowed log.
+     */
+    private static final String PARALLEL_PROPAGATION_PREFIX = "Failed in branch ";
+
+    /**
+     * Resolves the current per-step log tail cap in bytes, reading from the live plugin config when available
+     * and falling back to {@link #FALLBACK_MAX_STEP_LOG_BYTES} otherwise.
+     *
+     * @return cap in bytes (always &gt; 0).
+     */
+    private static long maxStepLogBytes() {
+        PluginImpl plugin = BfaUtils.tryGetPluginInstance();
+        if (plugin == null) {
+            return FALLBACK_MAX_STEP_LOG_BYTES;
+        }
+        return (long) plugin.getMaxStepLogSizeMb() * 1024L * 1024L;
+    }
 
     private PipelineLogReader() {
     }
@@ -225,7 +254,16 @@ public final class PipelineLogReader {
                             }
                         }
                     }
-                    storage.stepLog(node, true).writeRawLogTo(0, out);
+                    AnnotatedLargeText<?> logText = storage.stepLog(node, true);
+                    long len = logText.length();
+                    long cap = maxStepLogBytes();
+                    long start = Math.max(0L, len - cap);
+                    if (start > 0L) {
+                        String truncMarker = "[BFA] (step log truncated to last " + cap
+                                + " bytes; original size " + len + " bytes, " + start + " bytes skipped)\n";
+                        out.write(truncMarker.getBytes(StandardCharsets.UTF_8));
+                    }
+                    logText.writeRawLogTo(start, out);
                     // Defensive trailing newline; double-newlines are harmless for matching.
                     out.write('\n');
                 }
@@ -297,9 +335,20 @@ public final class PipelineLogReader {
             if (node instanceof BlockEndNode) {
                 continue;
             }
-            if (node.getError() != null) {
-                failed.add(node);
+            ErrorAction err = node.getError();
+            if (err == null) {
+                continue;
             }
+            // Skip atoms that only received a propagated "Failed in branch X" error from a parallel block.
+            // Such atoms did not themselves fail — they were cancelled because a sibling parallel branch failed.
+            // Their step log contains the cancelled branch's in-flight output (often very large), which is
+            // unrelated to the actual root cause that BFA is trying to identify.
+            Throwable cause = err.getError();
+            String message = (cause != null) ? cause.getMessage() : null;
+            if (message != null && message.startsWith(PARALLEL_PROPAGATION_PREFIX)) {
+                continue;
+            }
+            failed.add(node);
         }
         return failed;
     }

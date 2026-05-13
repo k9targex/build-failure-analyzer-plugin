@@ -97,6 +97,9 @@
         <f:entry title="${%Max size of log file}" description="${%maxLogSize}">
             <f:textbox field="maxLogSize" />
         </f:entry>
+        <f:entry title="${%Max pipeline step log tail (MB)}" description="${%maxStepLogSizeMbDescription}">
+            <f:number field="maxStepLogSizeMb" default="2" min="0" />
+        </f:entry>
         <f:entry title="${%Scan timeout per file (seconds)}" description="${%scanTimeoutFileSecondsDescription}">
             <f:number field="scanTimeoutFileSeconds" default="120" min="0" />
         </f:entry>

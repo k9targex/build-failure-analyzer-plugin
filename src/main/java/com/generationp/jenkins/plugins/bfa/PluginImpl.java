@@ -112,6 +112,14 @@ public class PluginImpl extends GlobalConfiguration {
      */
     public static final int DEFAULT_SCAN_TIMEOUT_BLOCK_SECONDS = 30;
 
+    /**
+     * Default maximum number of megabytes of a single failed pipeline step's log to include in the narrowed
+     * scan log. Long gradle/maven step logs in heavy multi-module projects can exceed 30 MB; BFA patterns
+     * almost always match the build summary at the very end of the log, so taking only the tail is enough
+     * and avoids hitting the per-pattern scan timeout. Two megabytes covers thousands of lines of summary.
+     */
+    public static final int DEFAULT_MAX_STEP_LOG_SIZE_MB = 2;
+
     private static final int BYTES_IN_MEGABYTE = 1024 * 1024;
 
     /**
@@ -179,6 +187,7 @@ public class PluginImpl extends GlobalConfiguration {
 
     private int nrOfScanThreads;
     private int maxLogSize;
+    private int maxStepLogSizeMb;
     private int scanTimeoutFileSeconds;
     private int scanTimeoutLineSeconds;
     private int scanTimeoutBlockSeconds;
@@ -737,6 +746,28 @@ public class PluginImpl extends GlobalConfiguration {
         }
 
         return maxLogSize;
+    }
+
+    /**
+     * Maximum number of megabytes of a single failed pipeline step's log that should be included in the
+     * narrowed scan log produced for BFA. Only the tail of that size is kept. If &lt;= 0, the default
+     * {@link #DEFAULT_MAX_STEP_LOG_SIZE_MB} applies.
+     *
+     * @return value in megabytes.
+     */
+    public int getMaxStepLogSizeMb() {
+        if (maxStepLogSizeMb <= 0) {
+            return DEFAULT_MAX_STEP_LOG_SIZE_MB;
+        }
+        return maxStepLogSizeMb;
+    }
+
+    /**
+     * @param maxStepLogSizeMb per-step log tail cap in megabytes (&lt;= 0 = default).
+     */
+    @DataBoundSetter
+    public void setMaxStepLogSizeMb(int maxStepLogSizeMb) {
+        this.maxStepLogSizeMb = maxStepLogSizeMb;
     }
 
     /**
