@@ -205,6 +205,67 @@ class PipelineLogReaderTest {
         }
     }
 
+    /**
+     * Within an active scan session the narrowed log is built once and shared by all
+     * subsequent {@link PipelineLogReader#openForScan} calls for the same build via
+     * independent readers over the same temp file. After the session is closed the
+     * cache is released, so a follow-up call falls back to the standalone one-shot
+     * path. This is the optimisation that prevents BFA from re-running narrowing
+     * once per indication (~130× on production configs) and timing out.
+     *
+     * @param j the JenkinsRule.
+     * @throws Exception if so.
+     */
+    @Test
+    void scanSessionSharesNarrowedReaderAcrossCalls(JenkinsRule j) throws Exception {
+        WorkflowJob proj = j.jenkins.createProject(WorkflowJob.class, "pipeline-session");
+        proj.setDefinition(new CpsFlowDefinition(
+                "node {\n"
+                        + "  echo 'MARKER_PIPELINE_SESSION'\n"
+                        + "  error 'BOOM_PIPELINE_SESSION'\n"
+                        + "}\n",
+                true));
+        WorkflowRun run = j.assertBuildStatus(Result.FAILURE, proj.scheduleBuild2(0));
+
+        java.io.ByteArrayOutputStream sink = new java.io.ByteArrayOutputStream();
+        try (java.io.PrintStream scanLog = new java.io.PrintStream(sink, true, "UTF-8");
+             PipelineLogReader.ScanSession session = PipelineLogReader.beginScanSession(run, scanLog)) {
+            // All three calls inside the session should see the same narrowed content
+            // without re-running narrowForWorkflowRun. We can't assert that from outside,
+            // but we can assert the content is identical and contains the failed-step marker.
+            String first;
+            String second;
+            String third;
+            try (Reader r = PipelineLogReader.openForScan(run)) {
+                first = readAll(r);
+            }
+            try (Reader r = PipelineLogReader.openForScan(run)) {
+                second = readAll(r);
+            }
+            try (Reader r = PipelineLogReader.openForScan(run, scanLog)) {
+                third = readAll(r);
+            }
+            assertTrue(first.contains("BOOM_PIPELINE_SESSION"),
+                    "Expected narrowed reader to contain the error message, got: " + first);
+            assertTrue(first.equals(second) && second.equals(third),
+                    "Expected all in-session readers to yield identical content");
+
+            String markers = sink.toString("UTF-8");
+            assertTrue(markers.contains("Pipeline narrow scan: starting"),
+                    "Expected 'starting' marker before heavy I/O, got: " + markers);
+            assertTrue(markers.contains("step(s)"),
+                    "Expected step-count marker after narrowing, got: " + markers);
+        }
+
+        // After session.close(), the temp file is gone; openForScan must transparently
+        // fall back to the standalone one-shot path (build a fresh narrow Reader).
+        try (Reader r = PipelineLogReader.openForScan(run)) {
+            String after = readAll(r);
+            assertTrue(after.contains("BOOM_PIPELINE_SESSION"),
+                    "Expected standalone openForScan to still return the failed-step content, got: " + after);
+        }
+    }
+
     private static String readAll(Reader r) throws java.io.IOException {
         try (BufferedReader br = new BufferedReader(r)) {
             return br.lines().collect(Collectors.joining("\n"));

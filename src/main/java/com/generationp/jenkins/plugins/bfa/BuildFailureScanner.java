@@ -402,7 +402,15 @@ public class BuildFailureScanner extends RunListener<Run> {
 
         logToScanLog(scanLog, "Scanning build for known causes...");
         long start = System.currentTimeMillis();
-        final List<FoundFailureCause> foundFailureCauseList = findIndications(causes, build, scanLog);
+        final List<FoundFailureCause> foundFailureCauseList;
+        // Pre-compute the narrowed log once per build scan and share it across all
+        // indication-scanning tasks. Without this, BuildLog{,Multiline}FailureReader
+        // each re-run narrowForWorkflowRun for every cause/indication, multiplying the
+        // underlying flow-log I/O by the number of indications (~130 on production
+        // configs) and pushing the scan past its time budget on large builds.
+        try (PipelineLogReader.ScanSession ignored = PipelineLogReader.beginScanSession(build, scanLog)) {
+            foundFailureCauseList = findIndications(causes, build, scanLog);
+        }
 
         long time = System.currentTimeMillis() - start;
         if (logger.isLoggable(Level.FINER)) {

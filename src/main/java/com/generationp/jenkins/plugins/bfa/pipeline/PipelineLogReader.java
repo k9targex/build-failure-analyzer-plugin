@@ -54,6 +54,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -107,7 +109,130 @@ public final class PipelineLogReader {
         return (long)plugin.getMaxStepLogSizeMb() * BYTES_IN_MEGABYTE;
     }
 
+    /**
+     * Active scan sessions keyed by {@link Run#getExternalizableId()}. Populated by
+     * {@link #beginScanSession} so that subsequent {@link #openForScan} calls for the same
+     * build during one scan share a single pre-computed narrowed log instead of each
+     * indication-scanning task re-running {@link #narrowForWorkflowRun} against the same
+     * flow log (which on a large multibranch build with many causes can multiply the
+     * underlying I/O by 100× and push the scan past its time budget).
+     *
+     * <p>The value is {@link #FALLBACK_SENTINEL} when a session was opened but narrowing
+     * isn't applicable (non-Pipeline build, no failed atoms, IO error) — this lets
+     * {@link #openForScan} recognise "session active, marker already emitted" and skip
+     * its own legacy marker logic, avoiding duplicate {@code "[BFA] Full-log scan"}
+     * lines on the build's Failure Scan Log page.
+     */
+    private static final ConcurrentMap<String, NarrowCache> SESSIONS = new ConcurrentHashMap<>();
+
+    /**
+     * Marker put into {@link #SESSIONS} when a scan session is active but narrowing didn't
+     * produce a cache (non-Pipeline build, no failed atoms, etc.). Identity-compared.
+     */
+    private static final NarrowCache FALLBACK_SENTINEL = new NarrowCache(null, 0, 0L);
+
     private PipelineLogReader() {
+    }
+
+    /**
+     * Begins a per-build scan session: pre-computes the narrowed log once and registers it so
+     * subsequent {@link #openForScan} calls on the same build share it via fresh readers
+     * over the same temp file, instead of each indication-scanning task re-doing
+     * {@link #narrowForWorkflowRun} from scratch.
+     *
+     * <p>The session must be closed (try-with-resources) to delete the temp file and unregister
+     * the entry. If narrowing isn't applicable (non-Pipeline build, no failed steps, Pipeline
+     * plugin missing, IO error), the session falls back cleanly: subsequent {@link #openForScan}
+     * calls return the full build log reader, as before.
+     *
+     * <p>Diagnostic markers are emitted to {@code scanLog}:
+     * <ul>
+     *   <li>{@code "[BFA] Pipeline narrow scan: starting…"} <em>before</em> the heavy I/O so the
+     *       stage is visible even if the scan is interrupted mid-narrowing;</li>
+     *   <li>{@code "[BFA] Pipeline narrow scan: N step(s), M bytes"} on success;</li>
+     *   <li>{@code "[BFA] Full-log scan"} on fallback.</li>
+     * </ul>
+     *
+     * @param build the build being scanned.
+     * @param scanLog optional sink for human-readable markers; may be {@code null}.
+     * @return a session token; never {@code null}.
+     */
+    @NonNull
+    public static ScanSession beginScanSession(@NonNull Run build, @CheckForNull PrintStream scanLog) {
+        if (scanLog != null) {
+            scanLog.println("[BFA] Pipeline narrow scan: starting…");
+            scanLog.flush();
+        }
+        NarrowCache cache = tryBuildNarrowCache(build);
+        String key = build.getExternalizableId();
+        boolean owner = false;
+        if (key != null) {
+            NarrowCache toPut;
+            if (cache != null) {
+                toPut = cache;
+            } else {
+                toPut = FALLBACK_SENTINEL;
+            }
+            NarrowCache existing = SESSIONS.putIfAbsent(key, toPut);
+            if (existing == null) {
+                owner = true;
+            } else {
+                // Concurrent scan of same build (rare): drop our copy and share the existing one.
+                if (cache != null && cache.path != null) {
+                    try {
+                        Files.deleteIfExists(cache.path);
+                    } catch (IOException e) {
+                        logger.log(Level.FINE, "Could not delete redundant temp narrow log " + cache.path, e);
+                    }
+                }
+                if (existing == FALLBACK_SENTINEL) {
+                    cache = null;
+                } else {
+                    cache = existing;
+                }
+            }
+        }
+        if (scanLog != null) {
+            if (cache != null) {
+                scanLog.printf("[BFA] Pipeline narrow scan: %d step(s), %d bytes%n",
+                        cache.stepCount, cache.bytes);
+            } else {
+                scanLog.println("[BFA] Full-log scan");
+            }
+            scanLog.flush();
+        }
+        return new ScanSession(key, cache, owner);
+    }
+
+    /**
+     * Wrapper around {@link #buildNarrowCache} that translates the expected non-applicability and
+     * unexpected failure paths into a {@code null} cache (so the caller falls back to the full
+     * build log), distinguishing them only by log level — same policy as
+     * {@link #tryNarrowToFailedSteps}.
+     *
+     * @param build the build being scanned.
+     * @return the built cache, or {@code null} to indicate fallback.
+     */
+    @CheckForNull
+    private static NarrowCache tryBuildNarrowCache(@NonNull Run build) {
+        if (!isStepBasedScanEnabled()) {
+            return null;
+        }
+        try {
+            if (!(build instanceof WorkflowRun)) {
+                return null;
+            }
+            return buildNarrowCache((WorkflowRun)build);
+        } catch (LinkageError e) {
+            logger.log(Level.FINE, "Pipeline classes not available; falling back to full log", e);
+            return null;
+        } catch (RuntimeException | IOException e) {
+            logger.log(Level.WARNING,
+                    "Pipeline narrow scan failed for " + build.getFullDisplayName()
+                            + "; falling back to full log",
+                    e);
+            return null;
+        }
     }
 
     /**
@@ -134,6 +259,20 @@ public final class PipelineLogReader {
      */
     @NonNull
     public static Reader openForScan(@NonNull Run build, @CheckForNull PrintStream scanLog) throws IOException {
+        // Active scan session: markers were already emitted by beginScanSession, so scanLog
+        // is intentionally ignored here to avoid duplicate "Full-log scan" / step-count lines.
+        String key = build.getExternalizableId();
+        if (key != null) {
+            NarrowCache cached = SESSIONS.get(key);
+            if (cached == FALLBACK_SENTINEL) {
+                return build.getLogReader();
+            }
+            if (cached != null) {
+                return Files.newBufferedReader(cached.path, StandardCharsets.UTF_8);
+            }
+        }
+        // Standalone path: no session active (direct external caller, e.g. tests).
+        // Preserve legacy one-shot behavior including inline markers.
         if (isStepBasedScanEnabled()) {
             NarrowResult narrow = tryNarrowToFailedSteps(build);
             if (narrow != null) {
@@ -218,6 +357,38 @@ public final class PipelineLogReader {
 
     @CheckForNull
     private static NarrowResult narrowForWorkflowRun(@NonNull WorkflowRun run) throws IOException {
+        NarrowCache cache = buildNarrowCache(run);
+        if (cache == null) {
+            return null;
+        }
+        try {
+            return new NarrowResult(new SelfDeletingReader(cache.path), cache.stepCount, cache.bytes);
+        } catch (IOException e) {
+            try {
+                Files.deleteIfExists(cache.path);
+            } catch (IOException suppressed) {
+                logger.log(Level.FINE, "Could not delete temp narrow log " + cache.path, suppressed);
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * Writes a narrowed temp file containing the {@link ErrorAction} messages and
+     * (capped) tail logs of failed atom-step nodes. Returns the file path plus
+     * step count and total byte size as a {@link NarrowCache}, or {@code null} when
+     * narrowing isn't applicable (no execution / no owner / no failed atoms).
+     *
+     * <p>Caller owns the temp file and is responsible for deletion: either via
+     * {@link ScanSession#close()} (when called from {@link #beginScanSession}) or via
+     * {@link SelfDeletingReader#close()} (when wrapped by {@link #narrowForWorkflowRun}).
+     *
+     * @param run the WorkflowRun to narrow.
+     * @return a fresh cache, or {@code null} when narrowing isn't applicable.
+     * @throws IOException if writing the temp file fails.
+     */
+    @CheckForNull
+    private static NarrowCache buildNarrowCache(@NonNull WorkflowRun run) throws IOException {
         FlowExecution execution = run.getExecution();
         if (execution == null) {
             return null;
@@ -233,8 +404,7 @@ public final class PipelineLogReader {
         LogStorage storage = LogStorage.of(owner);
 
         // Stream into a temp file so a worst-case (parallel branches with huge step
-        // logs each) does not blow up the Jenkins heap. The reader returned to the
-        // caller deletes the temp file on close.
+        // logs each) does not blow up the Jenkins heap.
         Path tempFile = Files.createTempFile("bfa-narrow-", ".log");
         try {
             try (OutputStream raw = Files.newOutputStream(tempFile);
@@ -271,7 +441,7 @@ public final class PipelineLogReader {
                 }
             }
             long bytes = Files.size(tempFile);
-            return new NarrowResult(new SelfDeletingReader(tempFile), failedNodes.size(), bytes);
+            return new NarrowCache(tempFile, failedNodes.size(), bytes);
         } catch (IOException | RuntimeException e) {
             try {
                 Files.deleteIfExists(tempFile);
@@ -279,6 +449,61 @@ public final class PipelineLogReader {
                 logger.log(Level.FINE, "Could not delete temp narrow log " + tempFile, suppressed);
             }
             throw e;
+        }
+    }
+
+    /**
+     * Path-based holder for a built narrowed log file, shared across scan tasks via
+     * {@link #SESSIONS}. Unlike {@link NarrowResult}, this holds a {@link Path} (not a
+     * {@link Reader}), so multiple independent readers can be opened over the same file.
+     */
+    private static final class NarrowCache {
+        final Path path;
+        final int stepCount;
+        final long bytes;
+
+        NarrowCache(Path path, int stepCount, long bytes) {
+            this.path = path;
+            this.stepCount = stepCount;
+            this.bytes = bytes;
+        }
+    }
+
+    /**
+     * Closeable handle for an active scan session. Closing removes the session from
+     * {@link #SESSIONS} and deletes the underlying temp file (if this token owns it).
+     */
+    public static final class ScanSession implements AutoCloseable {
+        private final String key;
+        private final NarrowCache cache;
+        private final boolean owner;
+
+        ScanSession(@CheckForNull String key, @CheckForNull NarrowCache cache, boolean owner) {
+            this.key = key;
+            this.cache = cache;
+            this.owner = owner;
+        }
+
+        @Override
+        public void close() {
+            if (!owner || key == null) {
+                return;
+            }
+            // Remove the registration (real cache OR FALLBACK_SENTINEL stored when cache was null).
+            NarrowCache registered;
+            if (cache != null) {
+                registered = cache;
+            } else {
+                registered = FALLBACK_SENTINEL;
+            }
+            SESSIONS.remove(key, registered);
+            if (cache != null && cache.path != null) {
+                try {
+                    Files.deleteIfExists(cache.path);
+                } catch (IOException e) {
+                    logger.log(Level.FINE, "Could not delete temp narrow log " + cache.path, e);
+                }
+            }
         }
     }
 
