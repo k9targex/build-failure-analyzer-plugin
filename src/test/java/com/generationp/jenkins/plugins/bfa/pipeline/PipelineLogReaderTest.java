@@ -266,6 +266,54 @@ class PipelineLogReaderTest {
         }
     }
 
+    /**
+     * When a build accumulates more failed atom-step nodes than
+     * {@link com.generationp.jenkins.plugins.bfa.PluginImpl#DEFAULT_MAX_FAILED_STEPS}, the narrowed reader
+     * must include only the first N atoms (sorted by node id) and emit a visible "failed-step cap reached"
+     * marker for the omitted atoms. This caps the worst-case narrow log size on heavy parallel builds
+     * (e.g. dozens of serenity test batches sharing one infra failure) and prevents the BFA scan from
+     * being interrupted by the external watchdog.
+     *
+     * @param j the JenkinsRule.
+     * @throws Exception if so.
+     */
+    @Test
+    void failedStepCapDropsExtraAtomsAndEmitsMarker(JenkinsRule j) throws Exception {
+        // Generate a few more failing stages than the cap so we can observe truncation.
+        final int defaultCap = com.generationp.jenkins.plugins.bfa.PluginImpl.DEFAULT_MAX_FAILED_STEPS;
+        final int overCapCount = defaultCap + 2;
+        // Sequential stages, each independently failing via catchError so all atoms record their own
+        // ErrorAction. This deterministically yields more failed atoms than the default cap.
+        StringBuilder script = new StringBuilder("node {\n");
+        for (int i = 0; i < overCapCount; i++) {
+            script.append("  stage('batch-").append(i).append("') {\n")
+                  .append("    catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {\n")
+                  .append("      sh \"echo MARK_CAP_TEST_").append(i).append(" && exit 1\"\n")
+                  .append("    }\n")
+                  .append("  }\n");
+        }
+        script.append("}\n");
+
+        WorkflowJob proj = j.jenkins.createProject(WorkflowJob.class, "pipeline-cap");
+        proj.setDefinition(new CpsFlowDefinition(script.toString(), true));
+        WorkflowRun run = j.assertBuildStatus(Result.FAILURE, proj.scheduleBuild2(0));
+
+        try (Reader r = PipelineLogReader.openForScan(run)) {
+            String narrowed = readAll(r);
+            // The first {defaultCap} atoms should be present.
+            for (int i = 0; i < defaultCap; i++) {
+                assertTrue(narrowed.contains("MARK_CAP_TEST_" + i),
+                        "Expected MARK_CAP_TEST_" + i + " from a within-cap atom, got: " + narrowed);
+            }
+            // The cap-reached marker must be visible so admins know steps were omitted.
+            assertTrue(narrowed.contains("failed-step cap"),
+                    "Expected 'failed-step cap' marker, got: " + narrowed);
+            // The first atom above the cap must not appear in the narrowed output.
+            assertFalse(narrowed.contains("MARK_CAP_TEST_" + defaultCap),
+                    "Expected MARK_CAP_TEST_" + defaultCap + " (over the cap) to be omitted, got: " + narrowed);
+        }
+    }
+
     private static String readAll(Reader r) throws java.io.IOException {
         try (BufferedReader br = new BufferedReader(r)) {
             return br.lines().collect(Collectors.joining("\n"));

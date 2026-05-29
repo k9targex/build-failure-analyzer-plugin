@@ -120,6 +120,16 @@ public class PluginImpl extends GlobalConfiguration {
      */
     public static final int DEFAULT_MAX_STEP_LOG_SIZE_MB = 2;
 
+    /**
+     * Default maximum number of failed pipeline atom-step nodes whose logs are included in the narrowed
+     * scan input. On heavy parallel builds (e.g. dozens of serenity test batches sharing one infra failure)
+     * findFailedNodes can return 50+ atoms with the same root-cause text; including all of them inflates the
+     * narrow log to hundreds of MB and pushes the scan past its time budget. Ten atoms is more than enough
+     * for BFA pattern matching — the same indication regex will fire on any of them — while keeping the
+     * worst-case narrow log size bounded to {@code maxFailedSteps * maxStepLogSizeMb} MB.
+     */
+    public static final int DEFAULT_MAX_FAILED_STEPS = 10;
+
     private static final int BYTES_IN_MEGABYTE = 1024 * 1024;
 
     /**
@@ -188,6 +198,7 @@ public class PluginImpl extends GlobalConfiguration {
     private int nrOfScanThreads;
     private int maxLogSize;
     private int maxStepLogSizeMb;
+    private int maxFailedSteps;
     private int scanTimeoutFileSeconds;
     private int scanTimeoutLineSeconds;
     private int scanTimeoutBlockSeconds;
@@ -768,6 +779,30 @@ public class PluginImpl extends GlobalConfiguration {
     @DataBoundSetter
     public void setMaxStepLogSizeMb(int maxStepLogSizeMb) {
         this.maxStepLogSizeMb = maxStepLogSizeMb;
+    }
+
+    /**
+     * Maximum number of failed pipeline atom-step nodes whose logs are included in the narrowed scan input.
+     * Failed atoms are sorted by their {@link org.jenkinsci.plugins.workflow.graph.FlowNode#getId()}
+     * (roughly time-of-creation order) and only the first N are kept; remaining ones are skipped with a
+     * visible marker on the build's "Failure Scan Log" page. If &lt;= 0, the default
+     * {@link #DEFAULT_MAX_FAILED_STEPS} applies.
+     *
+     * @return maximum number of failed steps to include in the narrowed log.
+     */
+    public int getMaxFailedSteps() {
+        if (maxFailedSteps <= 0) {
+            return DEFAULT_MAX_FAILED_STEPS;
+        }
+        return maxFailedSteps;
+    }
+
+    /**
+     * @param maxFailedSteps cap on failed-step count in the narrowed log (&lt;= 0 = default).
+     */
+    @DataBoundSetter
+    public void setMaxFailedSteps(int maxFailedSteps) {
+        this.maxFailedSteps = maxFailedSteps;
     }
 
     /**

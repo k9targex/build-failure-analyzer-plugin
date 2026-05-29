@@ -51,6 +51,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -107,6 +108,37 @@ public final class PipelineLogReader {
             return FALLBACK_MAX_STEP_LOG_BYTES;
         }
         return (long)plugin.getMaxStepLogSizeMb() * BYTES_IN_MEGABYTE;
+    }
+
+    /**
+     * Resolves the current cap on the number of failed atom-step nodes to include in the narrowed scan,
+     * reading from the live plugin config when available and falling back to
+     * {@link PluginImpl#DEFAULT_MAX_FAILED_STEPS} otherwise (e.g. during early plugin lifecycle or tests).
+     *
+     * @return cap on failed-step count (always &gt; 0).
+     */
+    private static int maxFailedSteps() {
+        PluginImpl plugin = BfaUtils.tryGetPluginInstance();
+        if (plugin == null) {
+            return PluginImpl.DEFAULT_MAX_FAILED_STEPS;
+        }
+        return plugin.getMaxFailedSteps();
+    }
+
+    /**
+     * Parses a {@link FlowNode}'s id as a {@code long} for numeric ordering. Returns
+     * {@link Long#MAX_VALUE} for any non-numeric id so such nodes sort last and tie-breaking
+     * by the original String id keeps the order stable.
+     *
+     * @param node the flow node.
+     * @return the id parsed as a long, or {@link Long#MAX_VALUE} when not numeric.
+     */
+    private static long flowNodeIdAsLong(@NonNull FlowNode node) {
+        try {
+            return Long.parseLong(node.getId());
+        } catch (NumberFormatException e) {
+            return Long.MAX_VALUE;
+        }
     }
 
     /**
@@ -401,6 +433,18 @@ public final class PipelineLogReader {
         if (failedNodes.isEmpty()) {
             return null;
         }
+        // Sort by FlowNode id ascending — for the same execution this is roughly time-of-creation order,
+        // so the first N atoms after sorting are the earliest failures (closest to the actual root cause).
+        // Workflow-cps emits numeric string ids ("1", "2", ..., "108"); naive String.compareTo would
+        // sort "108" < "18" < "9" lexicographically, so we parse as long and only fall back to the
+        // original String order if an id is non-numeric (shouldn't happen in practice).
+        failedNodes.sort(Comparator.comparingLong(PipelineLogReader::flowNodeIdAsLong)
+                .thenComparing(FlowNode::getId));
+        int maxNodes = maxFailedSteps();
+        int totalFailed = failedNodes.size();
+        int includedCount = Math.min(maxNodes, totalFailed);
+        List<FlowNode> nodesToWrite = failedNodes.subList(0, includedCount);
+
         LogStorage storage = LogStorage.of(owner);
 
         // Stream into a temp file so a worst-case (parallel branches with huge step
@@ -409,7 +453,7 @@ public final class PipelineLogReader {
         try {
             try (OutputStream raw = Files.newOutputStream(tempFile);
                  BufferedOutputStream out = new BufferedOutputStream(raw)) {
-                for (FlowNode node : failedNodes) {
+                for (FlowNode node : nodesToWrite) {
                     String header = "--- Step: " + node.getDisplayName()
                             + " (id=" + node.getId() + ") ---\n";
                     out.write(header.getBytes(StandardCharsets.UTF_8));
@@ -439,9 +483,15 @@ public final class PipelineLogReader {
                     // Defensive trailing newline; double-newlines are harmless for matching.
                     out.write('\n');
                 }
+                if (totalFailed > includedCount) {
+                    String omittedMarker = "[BFA] (failed-step cap " + maxNodes
+                            + " reached; " + (totalFailed - includedCount) + " of " + totalFailed
+                            + " failed step(s) omitted from narrowed scan)\n";
+                    out.write(omittedMarker.getBytes(StandardCharsets.UTF_8));
+                }
             }
             long bytes = Files.size(tempFile);
-            return new NarrowCache(tempFile, failedNodes.size(), bytes);
+            return new NarrowCache(tempFile, includedCount, bytes);
         } catch (IOException | RuntimeException e) {
             try {
                 Files.deleteIfExists(tempFile);
