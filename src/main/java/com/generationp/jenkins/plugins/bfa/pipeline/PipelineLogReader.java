@@ -406,8 +406,9 @@ public final class PipelineLogReader {
     }
 
     /**
-     * Writes a narrowed temp file containing the {@link ErrorAction} messages and
-     * (capped) tail logs of failed atom-step nodes. Returns the file path plus
+     * Writes a narrowed temp file containing the {@link ErrorAction} messages of all
+     * failed atom-step nodes and the (capped) tail logs of the first
+     * {@link #maxFailedSteps()} of them. Returns the file path plus
      * step count and total byte size as a {@link NarrowCache}, or {@code null} when
      * narrowing isn't applicable (no execution / no owner / no failed atoms).
      *
@@ -453,23 +454,27 @@ public final class PipelineLogReader {
         try {
             try (OutputStream raw = Files.newOutputStream(tempFile);
                  BufferedOutputStream out = new BufferedOutputStream(raw)) {
+                // Some steps (e.g. error '...') throw without writing to their step log;
+                // the message lives in ErrorAction. Messages are short, so they are written
+                // for every failed step, not just the capped ones: the step that explains the
+                // build is often the last to fail (a watcher that stops the parallel executors
+                // and then calls error) and sorts past the cap.
+                out.write("--- Error messages of all failed steps ---\n".getBytes(StandardCharsets.UTF_8));
+                Set<String> messages = new LinkedHashSet<>();
+                for (FlowNode node : failedNodes) {
+                    String msg = errorMessage(node);
+                    if (msg != null) {
+                        messages.add(msg);
+                    }
+                }
+                for (String msg : messages) {
+                    out.write(msg.getBytes(StandardCharsets.UTF_8));
+                    out.write('\n');
+                }
                 for (FlowNode node : nodesToWrite) {
                     String header = "--- Step: " + node.getDisplayName()
                             + " (id=" + node.getId() + ") ---\n";
                     out.write(header.getBytes(StandardCharsets.UTF_8));
-                    // Some steps (e.g. error '...') throw without writing to their step log;
-                    // the message lives in ErrorAction. Include it so regex matchers see it.
-                    ErrorAction errAction = node.getError();
-                    if (errAction != null) {
-                        Throwable t = errAction.getError();
-                        if (t != null) {
-                            String msg = t.getMessage();
-                            if (msg != null && !msg.isEmpty()) {
-                                out.write(msg.getBytes(StandardCharsets.UTF_8));
-                                out.write('\n');
-                            }
-                        }
-                    }
                     AnnotatedLargeText<?> logText = storage.stepLog(node, true);
                     long len = logText.length();
                     long cap = maxStepLogBytes();
@@ -500,6 +505,25 @@ public final class PipelineLogReader {
             }
             throw e;
         }
+    }
+
+    /**
+     * Returns the message of the error recorded on a failed node.
+     *
+     * @param node a failed flow node.
+     * @return the non-empty message, or {@code null} when the node carries none.
+     */
+    @CheckForNull
+    private static String errorMessage(@NonNull FlowNode node) {
+        ErrorAction errAction = node.getError();
+        if (errAction == null) {
+            return null;
+        }
+        String msg = errAction.getError().getMessage();
+        if (msg == null || msg.isEmpty()) {
+            return null;
+        }
+        return msg;
     }
 
     /**

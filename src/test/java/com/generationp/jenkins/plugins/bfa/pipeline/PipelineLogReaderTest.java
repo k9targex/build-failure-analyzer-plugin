@@ -314,6 +314,41 @@ class PipelineLogReaderTest {
         }
     }
 
+    /**
+     * A late {@code error} that follows more failed steps than the cap must still reach the
+     * narrowed log: its message lives only in the node's ErrorAction, and it is usually the
+     * step that explains the whole build (e.g. a watcher that stopped the parallel executors
+     * and then failed the build). Error messages of all failed steps are written regardless
+     * of the cap; only the step-log tails are capped.
+     *
+     * @param j the JenkinsRule.
+     * @throws Exception if so.
+     */
+    @Test
+    void lateErrorBeyondFailedStepCapIsStillScanned(JenkinsRule j) throws Exception {
+        final int overCapCount = PluginImpl.DEFAULT_MAX_FAILED_STEPS + 2;
+        StringBuilder script = new StringBuilder("node {\n");
+        for (int i = 0; i < overCapCount; i++) {
+            script.append("  catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {\n")
+                  .append("    sh 'exit 143'\n")
+                  .append("  }\n");
+        }
+        script.append("  error 'LATE_WATCHER_MARKER the target branch moved on'\n")
+              .append("}\n");
+
+        WorkflowJob proj = j.jenkins.createProject(WorkflowJob.class, "pipeline-late-error");
+        proj.setDefinition(new CpsFlowDefinition(script.toString(), true));
+        WorkflowRun run = j.assertBuildStatus(Result.FAILURE, proj.scheduleBuild2(0));
+
+        try (Reader r = PipelineLogReader.openForScan(run)) {
+            String narrowed = readAll(r);
+            assertTrue(narrowed.contains("LATE_WATCHER_MARKER the target branch moved on"),
+                    "Expected the late error's message despite the failed-step cap, got: " + narrowed);
+            assertTrue(narrowed.contains("failed-step cap"),
+                    "Expected 'failed-step cap' marker, got: " + narrowed);
+        }
+    }
+
     private static String readAll(Reader r) throws java.io.IOException {
         try (BufferedReader br = new BufferedReader(r)) {
             return br.lines().collect(Collectors.joining("\n"));
