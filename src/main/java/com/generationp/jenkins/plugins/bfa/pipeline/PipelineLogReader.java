@@ -28,6 +28,7 @@ import com.generationp.jenkins.plugins.bfa.PluginImpl;
 import com.generationp.jenkins.plugins.bfa.utils.BfaUtils;
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
+import hudson.Functions;
 import hudson.console.AnnotatedLargeText;
 import hudson.model.Run;
 import org.jenkinsci.plugins.workflow.actions.ErrorAction;
@@ -455,21 +456,22 @@ public final class PipelineLogReader {
             try (OutputStream raw = Files.newOutputStream(tempFile);
                  BufferedOutputStream out = new BufferedOutputStream(raw)) {
                 // Some steps (e.g. error '...') throw without writing to their step log;
-                // the message lives in ErrorAction. Messages are short, so they are written
-                // for every failed step, not just the capped ones: the step that explains the
-                // build is often the last to fail (a watcher that stops the parallel executors
-                // and then calls error) and sorts past the cap.
+                // the error lives in ErrorAction. It is written for every failed step, not
+                // just the capped ones: the step that explains the build is often the last to
+                // fail (a watcher that stops the parallel executors and then calls error) and
+                // sorts past the cap. The stack trace goes with the message, because a step that
+                // died with its agent leaves an empty log, and only the exception class
+                // (AgentOfflineException) names what happened.
                 out.write("--- Error messages of all failed steps ---\n".getBytes(StandardCharsets.UTF_8));
                 Set<String> messages = new LinkedHashSet<>();
                 for (FlowNode node : failedNodes) {
-                    String msg = errorMessage(node);
+                    String msg = errorText(node);
                     if (msg != null) {
                         messages.add(msg);
                     }
                 }
                 for (String msg : messages) {
                     out.write(msg.getBytes(StandardCharsets.UTF_8));
-                    out.write('\n');
                 }
                 for (FlowNode node : nodesToWrite) {
                     String header = "--- Step: " + node.getDisplayName()
@@ -508,22 +510,29 @@ public final class PipelineLogReader {
     }
 
     /**
-     * Returns the message of the error recorded on a failed node.
+     * Returns the error recorded on a failed node: the bare message on its own line, so patterns
+     * written against it keep matching, followed by the stack trace as Java prints it (exception
+     * class, message, frames, {@code Caused by} chain).
      *
      * @param node a failed flow node.
-     * @return the non-empty message, or {@code null} when the node carries none.
+     * @return the error text, or {@code null} when the node carries no error.
      */
     @CheckForNull
-    private static String errorMessage(@NonNull FlowNode node) {
+    private static String errorText(@NonNull FlowNode node) {
         ErrorAction errAction = node.getError();
         if (errAction == null) {
             return null;
         }
-        String msg = errAction.getError().getMessage();
-        if (msg == null || msg.isEmpty()) {
+        Throwable error = errAction.getError();
+        if (error == null) {
             return null;
         }
-        return msg;
+        String msg = error.getMessage();
+        String trace = Functions.printThrowable(error);
+        if (msg == null || msg.isEmpty()) {
+            return trace;
+        }
+        return msg + "\n" + trace;
     }
 
     /**
