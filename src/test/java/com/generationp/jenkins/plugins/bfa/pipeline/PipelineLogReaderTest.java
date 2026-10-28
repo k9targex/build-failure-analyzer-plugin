@@ -349,6 +349,25 @@ class PipelineLogReaderTest {
         }
     }
 
+    @Test
+    void errorClassAndStackTraceAreScanned(JenkinsRule j) throws Exception {
+        WorkflowJob proj = j.jenkins.createProject(WorkflowJob.class, "pipeline-error-class");
+        proj.setDefinition(new CpsFlowDefinition("node { readFile 'MISSING_MARKER.txt' }\n", true));
+        WorkflowRun run = j.assertBuildStatus(Result.FAILURE, proj.scheduleBuild2(0));
+
+        try (Reader r = PipelineLogReader.openForScan(run)) {
+            String narrowed = readAll(r);
+            assertTrue(narrowed.contains("\nhudson.remoting.ProxyException: java.nio.file.NoSuchFileException: "),
+                    "Expected the exception class, got: " + narrowed);
+            assertTrue(narrowed.matches("(?s).*\n\tat \\S+\\(.*"),
+                    "Expected stack frames, got: " + narrowed);
+            String bareMessageFirst = "(?s)--- Error messages of all failed steps ---\n"
+                    + "java\\.nio\\.file\\.NoSuchFileException: [^\n]*MISSING_MARKER\\.txt\n.*";
+            assertTrue(narrowed.matches(bareMessageFirst),
+                    "Expected the bare message on its own line, got: " + narrowed);
+        }
+    }
+
     private static String readAll(Reader r) throws java.io.IOException {
         try (BufferedReader br = new BufferedReader(r)) {
             return br.lines().collect(Collectors.joining("\n"));
